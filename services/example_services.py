@@ -18,7 +18,7 @@ try:
 
     while True:
       # Look for the response
-      print ("Waiting for transaction")
+      print ("Waiting for transaction\n")
       amount_received = 0
       amount_expected = int(sock.recv (5))
 

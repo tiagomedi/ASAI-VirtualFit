@@ -12,7 +12,7 @@ sock.connect (bus_address)
 try:
     while True:
       # Send Hello world to servi
-      if (input ('Send Hello world to servi ? y/n: ') != 'y'):
+      if (input ('Send Hello world to servi ? y/n: \n') != 'y'):
         break
       message = b'00016serviHello world'
       print ('sending {!r}'.format (message))
