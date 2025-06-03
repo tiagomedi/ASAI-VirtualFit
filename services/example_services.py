@@ -1,4 +1,3 @@
-# services/sum_service.py
 import socket
 import threading
 

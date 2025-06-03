@@ -2,7 +2,7 @@
 Este repositorio contiene el proyecto realizado el 2025 del curso de Arquitectura de Software de la Universidad Diego Portales (UDP).
 
 ## Prerrequisitos
-* Tener Docker y Docker Compose instalados (Docker Desktop).
+Tener Docker y Docker Compose instalados (Docker Desktop).
 
 ## Configuración y Ejecución del Bus de Servicios
 1. Clona este repositorio:
