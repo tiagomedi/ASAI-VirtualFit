@@ -15,7 +15,7 @@ Este repositorio contiene el proyecto realizado el 2025 del curso de Arquitectur
     docker-compose up -d
     ```
     Esto descargará la imagen `jrgiadach/soabus:v1` y la ejecutará en segundo plano.
-    El Bus estará escuchando en `localhost:5000`.
+    El Bus estará escuchando en `5001:5000`.
 
 3. Para detener el bus:
     ```bash
