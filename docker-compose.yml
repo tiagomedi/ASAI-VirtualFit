@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  soabus:
+    image: jrgiadach/soabus:v1
+    ports:
+      - "5000:5000"
+    container_name: asai
+    restart: unless-stopped # para que el bus se reinicie si se cae o al reiniciar Docker
