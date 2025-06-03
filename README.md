@@ -21,3 +21,18 @@ Este repositorio contiene el proyecto realizado el 2025 del curso de Arquitectur
     ```bash
     docker-compose down
     ```
+
+## Pasos para ejecutar para `example.py` y `example_sum.py`
+1. Inicia el BUS SOA (soabus):
+    * Abre una terminal en la raíz.
+    * `docker-compose up -d`
+2. Inicia tu SERVICIO (example_sum.py):
+    * Abre una nueva terminal.
+    * `cd services`
+    * `python3 example_sum.py`
+    * Deberías ver: `[SumService] Servicio de suma externo escuchando en localhost:5002`
+3. Ejecuta el CLIENTE (example.py):
+    * Abre una tercera terminal.
+    * `cd client`
+    * `python3 example.py`
+    * Ingresa los números cuando se te solicite.
