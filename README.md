@@ -30,7 +30,7 @@ Tener Docker y Docker Compose instalados (Docker Desktop).
     * Abre una nueva terminal.
     * `cd services`
     * `python3 example_services.py`
-    * Deberías ver: `[SumService] Servicio de suma externo escuchando en localhost:5002`
+    * Deberías ver: `Waiting for transaction`
 3. Ejecuta el CLIENTE (example_client.py):
     * Abre una tercera terminal.
     * `cd client`
