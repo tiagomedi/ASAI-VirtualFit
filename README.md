@@ -22,7 +22,7 @@ Este repositorio contiene el proyecto realizado el 2025 del curso de Arquitectur
     docker-compose down
     ```
 
-## Pasos para ejecutar para `example.py` y `example_sum.py`
+## Pasos a ejecutar para `example.py` y `example_sum.py`
 1. Inicia el BUS SOA (soabus):
     * Abre una terminal en la raíz.
     * `docker-compose up -d`
