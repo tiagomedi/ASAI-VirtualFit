@@ -27,20 +27,18 @@ async function run() {
         console.log('[Cliente] Conectado al bus.');
 
         try {
-            // 1. Registrar este cliente en el bus para que pueda recibir respuestas
+            
             sendMessage(client, 'sinit', CLIENT_ID);
 
-            // 2. Pedir datos al usuario
             const answers = await inquirer.prompt([
                 { type: 'input', name: 'correo', message: 'Introduce el correo electrónico:' },
                 { type: 'password', name: 'password', message: 'Introduce la contraseña:' }
             ]);
 
-            // 3. Preparar el payload JSON para el servicio
             const requestPayload = {
                 correo: answers.correo,
                 password: answers.password,
-                clientId: CLIENT_ID // Incluimos nuestro ID para que el servicio sepa a quién responder
+                clientId: CLIENT_ID 
             };
 
             // 4. Enviar la solicitud al servicio 'auths'
@@ -58,10 +56,9 @@ async function run() {
         const rawData = data.toString();
         const length = parseInt(rawData.substring(0, 5), 10);
         const payload = rawData.substring(5, 5 + length);
-        const sender = payload.substring(0, 5); // Debería ser 'auths'
+        const sender = payload.substring(0, 5); 
         const message = payload.substring(5);
 
-        // Ignoramos la respuesta inicial de 'sinit'
         if (sender === 'sinit') {
             console.log('[Cliente] Registro en el bus confirmado.');
             return;
@@ -77,8 +74,7 @@ async function run() {
         } else {
             console.error(`Error del servicio: ${response.message}`);
         }
-        
-        // Cerramos la conexión después de recibir la respuesta
+
         client.end();
     });
 

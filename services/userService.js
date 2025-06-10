@@ -1,8 +1,5 @@
-// services/userService.js
-
 const bcrypt = require('bcrypt');
-// --- CORRECCIÓN DE RUTAS ---
-// Salimos de 'services', entramos en 'database/models'
+
 const User = require('../database/models/user.model'); 
 const Product = require('../database/models/product.model');
 
@@ -32,8 +29,6 @@ async function crearUsuario(correo, passwordPlano) {
     
     return userObject;
 }
-
-// Exportamos solo la función necesaria por ahora
 module.exports = {
     crearUsuario
 };
