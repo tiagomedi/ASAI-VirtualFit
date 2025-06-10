@@ -1,4 +1,3 @@
-// client/cli/registerUser.js
 
 const net = require('net');
 const { v4: uuidv4 } = require('uuid');
@@ -9,7 +8,7 @@ const BUS_PORT = 5001;
 const CLIENT_ID = uuidv4().substring(0, 5);
 const SERVICE_TO_CALL = 'auths'; // El servicio de autenticación
 
-// Función para formatear y enviar mensajes
+
 function sendMessage(socket, service, message) {
     const payload = service + message;
     const header = String(payload.length).padStart(5, '0');
@@ -41,7 +40,6 @@ async function run() {
                 clientId: CLIENT_ID 
             };
 
-            // 4. Enviar la solicitud al servicio 'auths'
             sendMessage(client, SERVICE_TO_CALL, JSON.stringify(requestPayload));
             console.log('\n[Cliente] Solicitud enviada. Esperando respuesta...');
 
@@ -51,7 +49,7 @@ async function run() {
         }
     });
 
-    // Listener para la respuesta del servicio
+
     client.on('data', (data) => {
         const rawData = data.toString();
         const length = parseInt(rawData.substring(0, 5), 10);
