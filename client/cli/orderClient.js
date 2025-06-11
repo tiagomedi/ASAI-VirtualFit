@@ -9,9 +9,6 @@ const BUS_PORT = 5001;
 const CLIENT_ID = uuidv4().substring(0, 5);
 const SERVICE_TO_CALL = 'order';
 
-// clients/orderClient.js
-
-// Usamos la función sendMessage SIMPLE, igual que en el cliente de auths
 function sendMessage(socket, service, message) {
     const payload = service + message;
     const header = String(payload.length).padStart(5, '0');
@@ -77,7 +74,7 @@ async function runInteractiveLogic() {
             }))
         }]);
 
-        // --- SECCIÓN PARA AÑADIR PRODUCTOS (CÓDIGO COMPLETO) ---
+        // --- SECCIÓN PARA AÑADIR PRODUCTOS  ---
         const items_para_orden = [];
         let seguirAñadiendo = true;
 
@@ -89,10 +86,10 @@ async function runInteractiveLogic() {
 
             let producto;
             try {
-                 producto = await Product.findById(producto_id_str.trim());
+                producto = await Product.findById(producto_id_str.trim());
             } catch (error) {
-                 console.log('❌ ID de producto inválido. Inténtalo de nuevo.');
-                 continue;
+                console.log('❌ ID de producto inválido. Inténtalo de nuevo.');
+                continue;
             }
 
             if (!producto) {
@@ -153,7 +150,7 @@ async function runInteractiveLogic() {
             return;
         }
 
-        // --- SECCIÓN PARA ENVIAR LA ORDEN (CÓDIGO COMPLETO) ---
+        // --- SECCIÓN PARA ENVIAR LA ORDEN ---
         console.log('\n⏳ Conectando al BUS SOA para enviar la orden...');
 
         client.connect(BUS_PORT, BUS_HOST, () => {
@@ -182,7 +179,7 @@ async function runInteractiveLogic() {
 client.on('data', (data) => {
     const rawData = data.toString();
     const length = parseInt(rawData.substring(0, 5), 10);
-    if(isNaN(length) || length === 0) return; // Evitar errores con chunks vacíos
+    if(isNaN(length) || length === 0) return;
     
     const payload = rawData.substring(5, 5 + length);
     const sender = payload.substring(0, 5).trim();
