@@ -1,12 +1,11 @@
 const { connectDB, mongoose } = require('../../database/db.js'); 
 const net = require('net');    
-const orderLogic = require('../orderLogic.js'); // Asegúrate que la ruta sea correcta
+const orderLogic = require('../orderLogic.js');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
-const SERVICE_NAME = 'order'; // 5 caracteres, perfecto.
+const SERVICE_NAME = 'order';
 
-// Usamos la función sendMessage SIMPLE, igual que en auths
 function sendMessage(socket, service, message) {
     const payload = service + message;
     const header = String(payload.length).padStart(5, '0');
@@ -16,7 +15,7 @@ function sendMessage(socket, service, message) {
 }
 
 async function startService() {
-    // 1. Conectar a la DB PRIMERO (esta fue la corrección clave anterior)
+    // 1. Conectar a la DB PRIMERO
     await connectDB();
 
     // 2. Conectar al bus DESPUÉS
