@@ -1,117 +1,99 @@
 // catalogClient.js
 
 const net = require('net');
-const { v4: uuidv4 } = require('uuid');
 
 const BUS_HOST = 'localhost';
-const BUS_PORT = 5001;
-const CLIENT_ID = uuidv4().substring(0, 5);
-const SERVICE_TO_CALL = 'prods';
-
-// --- ESTADO DEL CLIENTE ---
-let isRegistered = false;
+const BUS_PORT = 5001; // Puerto donde opera el bus
+const SERVICE_TO_CALL = 'prods'; // Servicio de productos (5 caracteres)
 
 /**
- * Envía un mensaje formateado al bus.
- * @param {net.Socket} socket - El socket del bus.
- * @param {string} destination - El servicio de destino (5 chars).
- * @param {string} message - El contenido del mensaje.
+ * Construye un mensaje de solicitud formateado para el bus.
+ * @param {string} serviceName - El nombre del servicio de destino (5 chars).
+ * @param {string} data - El contenido del mensaje (usualmente un string JSON).
+ * @returns {string} El mensaje completo listo para ser enviado.
  */
-function sendMessage(socket, destination, message) {
-    const payload = destination + message;
+function buildRequestMessage(serviceName, data) {
+    if (serviceName.length !== 5) {
+        throw new Error("El nombre del servicio debe tener exactamente 5 caracteres.");
+    }
+    const payload = serviceName + data;
     const header = String(payload.length).padStart(5, '0');
-    const fullMessage = header + payload;
-    console.log(`[Cliente] Enviando a '${destination}': ${fullMessage}`);
-    socket.write(fullMessage);
+    return header + payload;
 }
 
 const client = new net.Socket();
 
 function run() {
     client.connect(BUS_PORT, BUS_HOST, () => {
-        console.log('[Cliente] Conectado al bus. Registrando cliente...');
-        // 1. Al conectar, solo se envía la solicitud de registro.
-        sendMessage(client, 'sinit', CLIENT_ID);
+        console.log(`[Cliente] Conectado al bus en el puerto ${BUS_PORT}.`);
+
+        const requestData = JSON.stringify({ command: 'getCatalog' });
+        const fullMessage = buildRequestMessage(SERVICE_TO_CALL, requestData);
+
+        console.log(`[Cliente] Enviando: ${fullMessage}`);
+        client.write(fullMessage);
+        console.log('\n[Cliente] Solicitud de catálogo enviada. Esperando respuesta...');
     });
 
     let buffer = '';
 
     client.on('data', (data) => {
         buffer += data.toString();
-
-        while (buffer.length >= 5) {
+        
+        while (true) {
+            if (buffer.length < 5) break;
             const messageLength = parseInt(buffer.substring(0, 5), 10);
-            if (buffer.length < 5 + messageLength) {
-                // Mensaje incompleto, esperar más datos.
-                break;
-            }
+            if (buffer.length < 5 + messageLength) break;
 
             const payload = buffer.substring(5, 5 + messageLength);
-            buffer = buffer.substring(5 + messageLength);
+            buffer = buffer.substring(5 + messageLength); // Acortar el buffer
 
-            const sender = payload.substring(0, 5);
-            const messageContent = payload.substring(5);
+            // --- INICIO DE LA CORRECCIÓN LÓGICA ---
 
-            // 2. Comprobar si es la confirmación de registro
-            if (sender === 'sinit' && !isRegistered) {
-                isRegistered = true;
-                console.log('[Cliente] Registro en el bus confirmado.');
-                
-                // 3. Introducir un retardo antes de enviar la siguiente petición.
-                // Esto le da tiempo al bus para procesar el registro y estar listo.
-                console.log('\n[Cliente] Esperando 100ms para que el bus se estabilice...');
-                setTimeout(() => {
-                    console.log('[Cliente] Solicitando catálogo al servicio "prods"...');
-                    const requestPayload = { command: 'getCatalog', clientId: CLIENT_ID };
-                    sendMessage(client, SERVICE_TO_CALL, JSON.stringify(requestPayload));
-                }, 100); // Retardo de 100 milisegundos
+            // Extraer las partes clave del payload
+            const serviceSender = payload.substring(0, 5);
+            const status = payload.substring(5, 7); // Potencialmente 'OK' o 'NK'
 
-            } else {
-                // 4. Si ya estamos registrados, este debe ser el mensaje con los datos del catálogo.
-                const response = JSON.parse(messageContent);
-                const serviceSender = response.from || sender; // Usar el nombre del servicio si está en el JSON
+            // Si el mensaje no viene del servicio que esperamos, O si no tiene un estado OK/NK,
+            // lo consideramos un eco de nuestra propia petición y lo ignoramos.
+            if (serviceSender !== SERVICE_TO_CALL || (status !== 'OK' && status !== 'NK')) {
+                console.log(`[Cliente] Mensaje ignorado (probablemente un eco): ${payload.substring(0, 50)}...`);
+                continue; // Saltar al siguiente mensaje en el buffer
+            }
 
-                console.log(`\n[Cliente] Respuesta recibida de '${serviceSender}':`);
+            // Si llegamos aquí, es una respuesta válida del servicio.
+            const messageContent = payload.substring(7);
 
-                if (response.status === 'success') {
+            console.log(`\n[Cliente] Respuesta válida recibida de '${serviceSender}' con estado '${status}'`);
+            
+            if (status === 'OK') {
+                try {
+                    const response = JSON.parse(messageContent);
                     console.log('--- CATÁLOGO DE PRODUCTOS VIRTUALFIT ---');
                     if (response.data && response.data.length > 0) {
                         response.data.forEach(producto => {
-                            console.log(`\nID: ${producto._id}`);
-                            console.log(`  Nombre: ${producto.nombre}`);
-                            console.log(`  Marca: ${producto.marca}`);
-                            console.log(`  Categoría: ${producto.categoria}`);
-                            if (producto.variaciones && producto.variaciones.length > 0) {
-                                const precios = producto.variaciones.map(v => v.precio);
-                                const minPrecio = Math.min(...precios);
-                                const maxPrecio = Math.max(...precios);
-                                console.log(`  Precio: $${minPrecio === maxPrecio ? minPrecio : `${minPrecio} - $${maxPrecio}`}`);
-                                console.log(`  Variaciones disponibles: ${producto.variaciones.length}`);
-                            } else {
-                                console.log('  (Sin variaciones de precio/talla/color)');
-                            }
+                            console.log(`- ${producto.nombre} (Marca: ${producto.marca})`);
                         });
                     } else {
-                        console.log('El catálogo está vacío en este momento.');
+                        console.log('El catálogo está vacío.');
                     }
                     console.log('\n--- FIN DEL CATÁLOGO ---');
-                } else {
-                    console.error(`Error del servicio: ${response.message}`);
+                } catch (e) {
+                    console.error(`[Cliente] Error al parsear la respuesta JSON del servicio: ${e.message}`);
+                    console.error(`[Cliente] Datos recibidos: ${messageContent}`);
                 }
-
-                // La interacción ha terminado, cerramos la conexión.
-                client.end();
+            } else { // status === 'NK'
+                console.error(`Error del servicio: ${messageContent}`);
             }
+            
+            // Cerrar la conexión SÓLO después de procesar una respuesta válida.
+            client.end();
+            // --- FIN DE LA CORRECCIÓN LÓGICA ---
         }
     });
 
-    client.on('close', () => {
-        console.log('[Cliente] Conexión cerrada.');
-    });
-
-    client.on('error', (err) => {
-        console.error(`[Cliente] Error de conexión: ${err.message}`);
-    });
+    client.on('close', () => console.log('[Cliente] Conexión cerrada.'));
+    client.on('error', (err) => console.error(`[Cliente] Error de conexión: ${err.message}`));
 }
 
 run();
