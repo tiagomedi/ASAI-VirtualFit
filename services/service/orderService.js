@@ -1,19 +1,15 @@
-const Order = require('../database/models/order.model'); // Asegúrate de que la ruta sea correcta
+const Order = require('../../database/models/order.model');
 
 async function crearOrden(userId, items, direccionEnvio, metodoPagoUsado) {
     console.log('[orderService] Iniciando creación de orden...');
 
-    // --- Validación básica de los inputs ---
     if (!userId || !items || !direccionEnvio || !metodoPagoUsado) {
         throw new Error('Faltan datos requeridos para crear la orden.');
     }
     if (!Array.isArray(items) || items.length === 0) {
         throw new Error('La orden debe contener al menos un item.');
     }
-    // Aquí podrías añadir más validaciones para direccionEnvio y metodoPagoUsado si lo necesitas
 
-    // --- Calcular el total pago basado en los items ---
-    // Es más seguro calcular el total en el backend que confiar en el total enviado por el cliente.
     let totalCalculado = 0;
     try {
         totalCalculado = items.reduce((sum, item) => {
