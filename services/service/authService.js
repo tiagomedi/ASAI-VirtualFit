@@ -1,6 +1,6 @@
-require('../database/db.js'); 
+require('../../database/db.js'); 
 const net = require('net');    
-const userService = require('./userService');
+const userService = require('./userService.js');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;

@@ -1,7 +1,7 @@
 const bcrypt = require('bcrypt');
 
-const User = require('../database/models/user.model'); 
-const Product = require('../database/models/product.model');
+const User = require('../../database/models/user.model'); 
+const Product = require('../../database/models/product.model');
 
 const SALT_ROUNDS = 10;
 
