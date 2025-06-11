@@ -1,26 +1,20 @@
-
-const path = require('path');
+require('dotenv').config({ path: __dirname + '/.env' }); // Asegura que encuentre el .env en la misma carpeta
 const mongoose = require('mongoose');
 
-// Construye una ruta absoluta al archivo .env en la carpeta raíz del proyecto
-const envPath = path.resolve(__dirname, './.env');
+const connectDB = async () => {
+    try {
+        // Usamos la URI de la variable de entorno que ya tienes configurada
+        await mongoose.connect(process.env.MONGODB_URI);
+        console.log('✅ Conectado a MongoDB exitosamente');
+    } catch (err) {
+        console.error('❌ Error de conexión a MongoDB:', err.message);
+        // Salimos del proceso si no nos podemos conectar, porque el servicio es inútil sin DB.
+        process.exit(1); 
+    }
+};
 
-// Carga las variables de entorno desde esa ruta específica
-require('dotenv').config({ path: envPath });
+// Exportamos la función para poder llamarla desde fuera, y también mongoose para los modelos.
+module.exports = { connectDB, mongoose };
 
-// --- PASO DE DEPURACIÓN ---
-// Imprime la ruta que está usando y el valor que encuentra para MONGODB_URI
-console.log(`Buscando archivo .env en: ${envPath}`);
-console.log(`Valor de MONGODB_URI: ${process.env.MONGODB_URI}`);
-// --- FIN DE DEPURACIÓN ---
-
-// Validar que la URI se haya cargado correctamente
-if (!process.env.MONGODB_URI) {
-    throw new Error('ERROR FATAL: La variable de entorno MONGODB_URI no está definida. Asegúrate de que tu archivo .env existe en la raíz del proyecto y tiene el formato correcto.');
-}
-
-mongoose.connect(process.env.MONGODB_URI)
-.then(() => console.log('Conectado a MongoDB'))
-.catch(err => console.error('Error de conexión:', err));
-
-module.exports = mongoose;
+//Para usarlo en otros archivos/servicios:
+//const mongoose = require('./ruta/al/archivo');
