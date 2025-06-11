@@ -1,63 +1,70 @@
-const Order = require('../../database/models/order.model');
+const { connectDB, mongoose } = require('../../database/db.js'); 
+const net = require('net');    
+const orderLogic = require('../orderLogic.js'); // Asegúrate que la ruta sea correcta
 
-async function crearOrden(userId, items, direccionEnvio, metodoPagoUsado) {
-    console.log('[orderService] Iniciando creación de orden...');
+const BUS_HOST = 'localhost';
+const BUS_PORT = 5001;
+const SERVICE_NAME = 'order'; // 5 caracteres, perfecto.
 
-    if (!userId || !items || !direccionEnvio || !metodoPagoUsado) {
-        throw new Error('Faltan datos requeridos para crear la orden.');
-    }
-    if (!Array.isArray(items) || items.length === 0) {
-        throw new Error('La orden debe contener al menos un item.');
-    }
-
-    let totalCalculado = 0;
-    try {
-        totalCalculado = items.reduce((sum, item) => {
-            // Validar que cada item tenga cantidad y precio_unitario válidos antes de sumar
-            if (typeof item.cantidad !== 'number' || item.cantidad <= 0 ||
-                typeof item.precio_unitario !== 'number' || item.precio_unitario < 0) {
-                throw new Error('Item de orden inválido: cantidad y precio deben ser números positivos.');
-            }
-            return sum + (item.cantidad * item.precio_unitario);
-        }, 0);
-        console.log(`[orderService] Total calculado a partir de items: ${totalCalculado}`);
-    } catch (error) {
-        console.error('[orderService] Error al calcular el total de la orden:', error.message);
-        throw new Error('Error al procesar los items de la orden: ' + error.message);
-    }
-
-
-    try {
-        // --- Crear la nueva instancia de la orden ---
-        const nuevaOrden = new Order({
-            user_id: userId,
-            total_pago: totalCalculado, // Usamos el total calculado
-            // estado se deja con el default 'Procesando'
-            direccion_envio: direccionEnvio,
-            metodo_pago_usado: metodoPagoUsado,
-            items: items
-        });
-
-        // --- Guardar la orden en la BD ---
-        console.log('[orderService] Guardando nueva orden en la BD...');
-        await nuevaOrden.save();
-        console.log('[orderService] Orden guardada con éxito.');
-
-        // Puedes retornar el documento de Mongoose o convertirlo a un objeto plano si prefieres
-        return nuevaOrden; // Retorna el documento guardado
-
-    } catch (error) {
-        console.error('[orderService] Error al crear la orden:', error);
-
-        // Puedes añadir manejo específico para errores de validación de Mongoose si es necesario
-        if (error.name === 'ValidationError') {
-            throw new Error('Error de validación al crear la orden: ' + error.message);
-        }
-
-        throw new Error('Error interno al crear la orden: ' + error.message);
-    }
+// Usamos la función sendMessage SIMPLE, igual que en auths
+function sendMessage(socket, service, message) {
+    const payload = service + message;
+    const header = String(payload.length).padStart(5, '0');
+    const fullMessage = header + payload;
+    console.log(`[orderService] Enviando a '${service}': ${fullMessage.substring(0, 150)}...`);
+    socket.write(fullMessage);
 }
 
-module.exports = {
-    crearOrden
-};
+async function startService() {
+    // 1. Conectar a la DB PRIMERO (esta fue la corrección clave anterior)
+    await connectDB();
+
+    // 2. Conectar al bus DESPUÉS
+    const client = new net.Socket();
+
+    client.connect(BUS_PORT, BUS_HOST, () => {
+        console.log('[orderService] Conectado al bus.');
+        sendMessage(client, 'sinit', SERVICE_NAME);
+    });
+
+    client.on('data', (data) => {
+        const rawData = data.toString();
+        console.log(`[orderService] Datos crudos recibidos: ${rawData}`);
+
+        const length = parseInt(rawData.substring(0, 5), 10);
+        const payload = rawData.substring(5, 5 + length);
+        const sender = payload.substring(0, 5); 
+        const message = payload.substring(5);
+
+        console.log(`[orderService] Mensaje procesado: de='${sender}', mensaje='${message}'`);
+        
+        if (sender === 'sinit') {
+            console.log('[orderService] Registro en el bus confirmado.');
+            return;
+        }
+
+        (async () => {
+            let requestData;
+            try {
+                requestData = JSON.parse(message);
+                const nuevaOrden = await orderLogic.crearOrden(requestData);
+                const responsePayload = { status: 'success', data: nuevaOrden };
+                sendMessage(client, requestData.clientId, JSON.stringify(responsePayload));
+            } catch (error) {
+                const clientId = requestData ? requestData.clientId : null;
+                const errorPayload = { status: 'error', message: error.message };
+                console.error(`[orderService] Error al procesar: ${error.message}`);
+                if (clientId) {
+                    sendMessage(client, clientId, JSON.stringify(errorPayload));
+                }
+            }
+        })();
+    });
+
+    client.on('close', () => console.log('[orderService] Conexión con el bus cerrada.'));
+    client.on('error', (err) => console.error(`[orderService] Error de conexión: ${err.message}`));
+
+    console.log(`🚀 Servicio '${SERVICE_NAME}' listo y esperando solicitudes.`);
+}
+
+startService();
