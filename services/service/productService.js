@@ -1,100 +1,107 @@
-require('../../database/db.js'); // Conecta a la base de datos
+// productService.js
+
+// 1. Importamos la PROMESA de conexión a la base de datos.
+const dbConnectionPromise = require('../../database/db.js'); 
 const net = require('net');
-const Product = require('../../database/models/product.model.js'); // Importa el modelo de Producto
+const Product = require('../../database/models/product.model.js');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
-const SERVICE_NAME = 'prods'; // Nombre corto y único para el servicio de productos
+const SERVICE_NAME = 'prods';
 
-/**
- * Envía un mensaje formateado al bus.
- * @param {net.Socket} socket - El socket del bus.
- * @param {string} service - El ID del cliente o servicio de destino (5 chars).
- * @param {string} message - El contenido del mensaje.
- */
-function sendMessage(socket, service, message) {
-    const payload = service + message;
+let isRegistered = false;
+
+function sendMessage(socket, destination, message) {
+    const payload = destination + message;
     const header = String(payload.length).padStart(5, '0');
     const fullMessage = header + payload;
-    console.log(`[${SERVICE_NAME}] Enviando: ${fullMessage}`);
+    console.log(`[${SERVICE_NAME}] Enviando a '${destination}': ${fullMessage.substring(0, 100)}...`);
     socket.write(fullMessage);
 }
 
-const client = new net.Socket();
+// Se envuelve toda la lógica en una función asíncrona para poder usar 'await'
+async function startService() {
+    try {
+        // 2. Esperar a que la conexión a la base de datos se complete.
+        // El código no continuará de aquí hasta que la promesa se resuelva.
+        console.log(`[${SERVICE_NAME}] Esperando conexión a la base de datos...`);
+        await dbConnectionPromise;
+        console.log(`[${SERVICE_NAME}] Conexión a la base de datos confirmada.`);
 
-client.connect(BUS_PORT, BUS_HOST, () => {
-    console.log(`[${SERVICE_NAME}] Conectado al bus.`);
-    // Se registra en el bus para que el bus sepa que este servicio existe.
-    sendMessage(client, 'sinit', SERVICE_NAME);
-});
+        // 3. Ahora que la BD está lista, conectar al bus de mensajes.
+        const client = new net.Socket();
+        client.connect(BUS_PORT, BUS_HOST, () => {
+            console.log(`[${SERVICE_NAME}] Conectado al bus. Registrando servicio...`);
+            sendMessage(client, 'sinit', SERVICE_NAME);
+        });
 
-client.on('data', (data) => {
-    const rawData = data.toString();
-    console.log(`[${SERVICE_NAME}] Datos crudos recibidos: ${rawData}`);
+        let buffer = '';
+        client.on('data', (data) => {
+            buffer += data.toString();
 
-    const length = parseInt(rawData.substring(0, 5), 10);
-    const payload = rawData.substring(5, 5 + length);
-    const sender = payload.substring(0, 5); // Quién envió el mensaje (el clientId)
-    const message = payload.substring(5);
+            while (buffer.length >= 5) {
+                const messageLength = parseInt(buffer.substring(0, 5), 10);
+                if (buffer.length < 5 + messageLength) break;
 
-    console.log(`[${SERVICE_NAME}] Mensaje procesado: de='${sender}', mensaje='${message}'`);
-
-    if (sender === 'sinit') {
-        console.log(`[${SERVICE_NAME}] Registro en el bus confirmado.`);
-        return;
-    }
-
-    // Procesar la solicitud del cliente de forma asíncrona
-    (async () => {
-        let request;
-        try {
-            request = JSON.parse(message);
-            const { command, clientId } = request;
-
-            if (!command || !clientId) {
-                throw new Error('Payload inválido, falta "command" o "clientId".');
-            }
-
-            let responsePayload;
-
-            // Manejar diferentes comandos si el servicio crece
-            switch (command) {
-                case 'getCatalog':
-                    console.log(`[${SERVICE_NAME}] Obteniendo catálogo de la BD...`);
-                    // .lean() devuelve objetos JS planos, más rápido que documentos Mongoose completos
-                    const productos = await Product.find({}).lean();
-                    
-                    responsePayload = {
-                        status: 'success',
-                        data: productos
-                    };
-                    break;
+                const payload = buffer.substring(5, 5 + messageLength);
+                buffer = buffer.substring(5 + messageLength);
                 
-                // Aquí se podrían añadir otros casos: getProductById, filterProducts, etc.
-                default:
-                    throw new Error(`Comando desconocido: ${command}`);
+                const sender = payload.substring(0, 5);
+                const messageContent = payload.substring(5);
+
+                if (sender === 'sinit') {
+                    console.log(`[${SERVICE_NAME}] Registro en el bus confirmado. ¡Servicio totalmente operativo!`);
+                    isRegistered = true;
+                    continue;
+                }
+
+                if (!isRegistered) {
+                    console.warn(`[${SERVICE_NAME}] Recibido mensaje antes de estar listo. Descartando.`);
+                    continue;
+                }
+                
+                (async () => {
+                    let request;
+                    try {
+                        request = JSON.parse(messageContent);
+                        const { command, clientId } = request;
+
+                        if (!command || !clientId) throw new Error('Payload inválido.');
+
+                        console.log(`[${SERVICE_NAME}] Petición recibida para '${command}' de '${clientId}'`);
+                        
+                        let responsePayload;
+                        if (command === 'getCatalog') {
+                            const productos = await Product.find({}).lean();
+                            responsePayload = { status: 'success', from: SERVICE_NAME, data: productos };
+                        } else {
+                            throw new Error(`Comando desconocido: ${command}`);
+                        }
+                        sendMessage(client, clientId, JSON.stringify(responsePayload));
+                    } catch (error) {
+                        const clientId = request ? request.clientId : 'unknown';
+                        console.error(`[${SERVICE_NAME}] Error procesando la petición de '${clientId}':`, error.message);
+                        const errorPayload = { status: 'error', from: SERVICE_NAME, message: error.message };
+                        sendMessage(client, clientId, JSON.stringify(errorPayload));
+                    }
+                })();
             }
+        });
 
-            // Enviar la respuesta al cliente original
-            sendMessage(client, clientId, JSON.stringify(responsePayload));
+        client.on('close', () => {
+            console.log(`[${SERVICE_NAME}] Conexión con el bus cerrada.`);
+            isRegistered = false;
+        });
 
-        } catch (error) {
-            console.error(`[${SERVICE_NAME}] Error al procesar la solicitud: ${error.message}`);
-            // Es crucial tener el clientId para poder responder el error.
-            const clientId = request ? request.clientId : sender;
-            const errorPayload = {
-                status: 'error',
-                message: error.message
-            };
-            sendMessage(client, clientId, JSON.stringify(errorPayload));
-        }
-    })();
-});
+        client.on('error', (err) => {
+            console.error(`[${SERVICE_NAME}] Error de conexión con el bus: ${err.message}`);
+        });
 
-client.on('close', () => {
-    console.log(`[${SERVICE_NAME}] Conexión con el bus cerrada.`);
-});
+    } catch (error) {
+        console.error(`[${SERVICE_NAME}] FALLO CRÍTICO AL INICIAR: No se pudo conectar a la base de datos.`, error);
+        process.exit(1); // El servicio no puede funcionar sin BD, así que salimos.
+    }
+}
 
-client.on('error', (err) => {
-    console.error(`[${SERVICE_NAME}] Error de conexión: ${err.message}`);
-});
+// Ejecutar la función principal para iniciar el servicio.
+startService();
