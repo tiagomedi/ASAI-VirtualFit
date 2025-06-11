@@ -4,7 +4,7 @@ const { connectDB, mongoose } = require('../../database/db.js');
 const User = require('../../database/models/user.model.js');
 const Product = require('../../database/models/product.model.js');
 
-const BUS_HOST = process.env.BUS_HOST || 'localhost';
+const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
 const CLIENT_ID = uuidv4().substring(0, 5);
 const SERVICE_TO_CALL = 'order';
@@ -13,7 +13,7 @@ function sendMessage(socket, service, message) {
     const payload = service + message;
     const header = String(payload.length).padStart(5, '0');
     const fullMessage = header + payload;
-    console.log(`[Cliente] Enviando: ${fullMessage.substring(0, 150)}...`);
+    console.log(`[Cliente] -> Enviando a '${service}': ${fullMessage.substring(0, 100)}...`);
     socket.write(fullMessage);
 }
 const client = new net.Socket();
