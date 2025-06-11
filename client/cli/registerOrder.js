@@ -1,5 +1,3 @@
-// createOrderBusClient_withProductSchema.js
-
 const net = require('net');
 const { v4: uuidv4 } = require('uuid');
 
@@ -10,36 +8,26 @@ const CLIENT_ID = uuidv4().substring(0, 5); // ID único para este cliente (5 ca
 const SERVICE_TO_CALL = 'orders'; // <<<--- ID del servicio que maneja la creación de órdenes
 
 // --- Datos de la Orden a Enviar ---
-// **** ¡IMPORTANTE! DEBES EDITAR ESTA SECCIÓN CON LOS DATOS REALES DE LA ORDEN ****
-// Asegúrate de usar IDs válidos de tu base de datos de desarrollo
 const orderDataToSend = {
-    // user_id: Debe ser un ObjectId válido (string) de un usuario existente en tu BD
-    userId: '68487c3423f837087c8b8b19', // <<<--- ¡REEMPLAZA ESTO! Ejemplo: '60c72b2f9b1d8e001c8e4a5d'
+    userId: '68487c3423f837087c8b8b19', 
 
-    // items: Array de productos/variaciones específicas en la orden
     items: [
         {
-            // producto_id: ObjectId válido (string) del documento Product principal
-            producto_id: '6848e24d98766234fe88f3b3', // <<<--- ¡REEMPLAZA ESTO! Ejemplo: '60d5ec49b123c1f0b3a4d5e6'
-            // producto_variacion_id: ObjectId válido (string) de una variación *dentro* del array 'variaciones' de ese producto
-            producto_variacion_id: 'ID_DE_VARIACION_1_AQUI', // <<<--- ¡REEMPLAZA ESTO! Ejemplo: '60d5ec49b123c1f0b3a4d5e7'
-            // Datos snapshot de la variación y el producto en el momento de la compra:
-            nombre: 'Camiseta Básica', // Nombre del producto principal
-            talla: 'M',              // Talla de la variación
-            color: 'Rojo',           // Color de la variación
-            cantidad: 1,             // Cantidad comprada
-            precio_unitario: 25.99   // Precio de la variación en el momento de la compra
+            producto_id: '6848e24d98766234fe88f3b3', 
+            nombre: 'Camiseta Básica', 
+            talla: 'M',            
+            color: 'Rojo',           
+            cantidad: 1,             
+            precio_unitario: 25.99  
         },
         {
-            producto_id: 'ID_DEL_PRODUCTO_2_AQUI', // <<<--- ¡REEMPLAZA ESTO! Ejemplo: '60f1a8d0c456e2b1d0f7g8h9'
-            producto_variacion_id: 'ID_DE_VARIACION_2_AQUI', // <<<--- ¡REEMPLAZA ESTO! Ejemplo: '60f1a8d0c456e2b1d0f7g8ha'
+            producto_id: '6848e2be79c6fd8579844319', 
             nombre: 'Pantalón Vaquero',
             talla: 'L',
             color: 'Azul Oscuro',
             cantidad: 2,
             precio_unitario: 55.00
         }
-        // Puedes añadir más items aquí. Cada item debe referenciar UN producto y UNA variación específica de ese producto.
     ],
 
     // direccion_envio: Detalles de la dirección (snapshot)
@@ -106,9 +94,6 @@ async function run() {
 
     client.on('data', (data) => {
         const rawData = data.toString();
-        // Basándonos en tu ejemplo, el bus parece reenviar la respuesta
-        // al cliente_id que va al inicio del payload recibido, con el formato:
-        // length(5) + recipient_id(5) + message (que es el JSON de respuesta del servicio)
 
         try {
             const length = parseInt(rawData.substring(0, 5), 10);
@@ -127,9 +112,6 @@ async function run() {
             const recipientId = fullPayload.substring(0, 5); // Los primeros 5 caracteres después de la longitud
             const message = fullPayload.substring(5); // El resto es el mensaje (JSON)
 
-            // Si el mensaje es la confirmación de sinit del bus
-            // Algunos buses pueden responder sinit + client_id, otros solo confirmar
-            // Adaptamos a tu patrón original de sinit + client_id
             if (fullPayload.substring(0, 5) === 'sinit' && message === CLIENT_ID) {
                  console.log(`[Cliente ${CLIENT_ID}] Registro en el bus confirmado.`);
                  // No cerramos la conexión, esperamos la respuesta de la orden
