@@ -61,13 +61,11 @@ async function startService() {
                 const requestData = JSON.parse(message);
                 const nuevaOrden = await orderLogic.crearOrden(requestData);
                 
-                // --- CAMBIO ---
                 // Enviamos directamente el JSON de la nueva orden
                 sendResponse(serviceSocket, JSON.stringify(nuevaOrden));
 
             } catch (error) {
                 console.error("[orderService] ERROR:", error.message);
-                // --- CAMBIO ---
                 // Para los errores, enviamos un objeto JSON con el error
                 const errorResponse = { status: 'error', message: error.message };
                 sendResponse(serviceSocket, JSON.stringify(errorResponse));
