@@ -1,6 +1,6 @@
 const { connectDB } = require('../../database/db.js'); 
 const net = require('net');
-const orderLogic = require('../orderLogic.js');
+const orderLogic = require('../service/orderLogic.js');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
