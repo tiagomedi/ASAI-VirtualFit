@@ -1,7 +1,5 @@
-// services/service/pagosService.js
 const { connectDB, mongoose } = require('../../database/db.js');
 const net = require('net');
-// --- ¡ESTA ES LA CORRECCIÓN CLAVE! ---
 const { procesarPago } = require('../service/pagosLogic.js'); 
 
 const BUS_HOST = 'localhost';
