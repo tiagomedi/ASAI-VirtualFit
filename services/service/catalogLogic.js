@@ -109,8 +109,7 @@ async function obtenerDetallesProducto(productoId) {
     if (!productoId) throw new Error("Se requiere un ID de producto.");
     
     try {
-        // Usamos .lean() para un mejor rendimiento
-        const producto = await Product.findById(productoId).lean();
+        const producto = await Product.findById(productoId);
         if (!producto) throw new Error(`Producto con ID ${productoId} no encontrado.`);
         
         console.log(`--- [catalogLogic] ÉXITO: Detalles de '${producto.nombre}' encontrados.`);
