@@ -2,6 +2,7 @@
 const path = require('path');
 const mongoose = require('mongoose');
 
+require('dotenv').config();
 // Construye una ruta absoluta al archivo .env en la carpeta raíz del proyecto
 const envPath = path.resolve(__dirname, './.env');
 
@@ -11,7 +12,7 @@ require('dotenv').config({ path: envPath });
 // --- PASO DE DEPURACIÓN ---
 // Imprime la ruta que está usando y el valor que encuentra para MONGODB_URI
 console.log(`Buscando archivo .env en: ${envPath}`);
-console.log(`Valor de MONGODB_URI: ${process.env.MONGODB_URI}`);
+console.log(`Valor de MOaNGODB_URI: ${process.env.MONGODB_URI}`);
 // --- FIN DE DEPURACIÓN ---
 
 // Validar que la URI se haya cargado correctamente
