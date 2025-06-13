@@ -1,2 +1,3 @@
 venv/
 database/.env
+service/.env
