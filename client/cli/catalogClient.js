@@ -1,99 +1,159 @@
-// catalogClient.js
-
+// clients/catalogClient.js
 const net = require('net');
+const { mongoose } = require('../../database/db.js'); // Solo para cerrar la conexión al final
 
 const BUS_HOST = 'localhost';
-const BUS_PORT = 5001; // Puerto donde opera el bus
-const SERVICE_TO_CALL = 'prods'; // Servicio de productos (5 caracteres)
+const BUS_PORT = 5001;
+const SERVICE_TO_CALL = 'catal'; // Servicio a llamar
 
-/**
- * Construye un mensaje de solicitud formateado para el bus.
- * @param {string} serviceName - El nombre del servicio de destino (5 chars).
- * @param {string} data - El contenido del mensaje (usualmente un string JSON).
- * @returns {string} El mensaje completo listo para ser enviado.
- */
-function buildRequestMessage(serviceName, data) {
-    if (serviceName.length !== 5) {
-        throw new Error("El nombre del servicio debe tener exactamente 5 caracteres.");
-    }
-    const payload = serviceName + data;
+// Función para construir y enviar el mensaje según el protocolo del bus
+function sendMessage(socket, serviceName, data) {
+    const service = serviceName.padEnd(5, ' ');
+    const payload = service + JSON.stringify(data);
     const header = String(payload.length).padStart(5, '0');
-    return header + payload;
+    const fullMessage = header + payload;
+
+    console.log(`\n[Cliente] -> Enviando a '${serviceName}': ${fullMessage.substring(0, 150)}...`);
+    socket.write(fullMessage);
 }
 
-const client = new net.Socket();
-
-function run() {
-    client.connect(BUS_PORT, BUS_HOST, () => {
-        console.log(`[Cliente] Conectado al bus en el puerto ${BUS_PORT}.`);
-
-        const requestData = JSON.stringify({ command: 'getCatalog' });
-        const fullMessage = buildRequestMessage(SERVICE_TO_CALL, requestData);
-
-        console.log(`[Cliente] Enviando: ${fullMessage}`);
-        client.write(fullMessage);
-        console.log('\n[Cliente] Solicitud de catálogo enviada. Esperando respuesta...');
+// Función para mostrar los productos de forma legible
+function displayProducts(products) {
+    if (!products || products.length === 0) {
+        console.log("\n-- No se encontraron productos que coincidan con los criterios. --");
+        return;
+    }
+    console.log(`\n--- 📜 Catálogo de Productos (${products.length} encontrados) ---\n`);
+    products.forEach(p => {
+        console.log(`📦 Nombre: ${p.nombre} [Marca: ${p.marca || 'N/A'}]`);
+        if (p.variaciones && p.variaciones.length > 0) {
+            p.variaciones.forEach(v => {
+                console.log(`   - Var: ${v.color || ''} ${v.talla || ''} | Precio: $${v.precio} | Stock: ${v.stock}`);
+            });
+        } else {
+            console.log("   - (Sin variaciones de precio/stock definidas)");
+        }
+        console.log('----------------------------------------------------');
     });
+}
 
-    let buffer = '';
+// Función que encapsula la comunicación con el bus
+function sendRequest(requestPayload) {
+    return new Promise((resolve, reject) => {
+        const clientSocket = new net.Socket();
+        clientSocket.connect(BUS_PORT, BUS_HOST, () => {
+            sendMessage(clientSocket, SERVICE_TO_CALL, requestPayload);
+        });
 
-    client.on('data', (data) => {
-        buffer += data.toString();
-        
-        while (true) {
-            if (buffer.length < 5) break;
-            const messageLength = parseInt(buffer.substring(0, 5), 10);
-            if (buffer.length < 5 + messageLength) break;
+        clientSocket.on('data', (data) => {
+            const rawData = data.toString();
+            const serviceName = rawData.substring(5, 10).trim();
+            const status = rawData.substring(10, 12).trim();
+            const message = rawData.substring(12);
 
-            const payload = buffer.substring(5, 5 + messageLength);
-            buffer = buffer.substring(5 + messageLength); // Acortar el buffer
-
-            // --- INICIO DE LA CORRECCIÓN LÓGICA ---
-
-            // Extraer las partes clave del payload
-            const serviceSender = payload.substring(0, 5);
-            const status = payload.substring(5, 7); // Potencialmente 'OK' o 'NK'
-
-            // Si el mensaje no viene del servicio que esperamos, O si no tiene un estado OK/NK,
-            // lo consideramos un eco de nuestra propia petición y lo ignoramos.
-            if (serviceSender !== SERVICE_TO_CALL || (status !== 'OK' && status !== 'NK')) {
-                console.log(`[Cliente] Mensaje ignorado (probablemente un eco): ${payload.substring(0, 50)}...`);
-                continue; // Saltar al siguiente mensaje en el buffer
-            }
-
-            // Si llegamos aquí, es una respuesta válida del servicio.
-            const messageContent = payload.substring(7);
-
-            console.log(`\n[Cliente] Respuesta válida recibida de '${serviceSender}' con estado '${status}'`);
-            
             if (status === 'OK') {
                 try {
-                    const response = JSON.parse(messageContent);
-                    console.log('--- CATÁLOGO DE PRODUCTOS VIRTUALFIT ---');
-                    if (response.data && response.data.length > 0) {
-                        response.data.forEach(producto => {
-                            console.log(`- ${producto.nombre} (Marca: ${producto.marca})`);
-                        });
+                    const responseData = JSON.parse(message);
+                    if (responseData.status === 'error') {
+                        reject(new Error(responseData.message));
                     } else {
-                        console.log('El catálogo está vacío.');
+                        resolve(responseData);
                     }
-                    console.log('\n--- FIN DEL CATÁLOGO ---');
                 } catch (e) {
-                    console.error(`[Cliente] Error al parsear la respuesta JSON del servicio: ${e.message}`);
-                    console.error(`[Cliente] Datos recibidos: ${messageContent}`);
+                    reject(new Error("Error al parsear la respuesta JSON del servicio."));
                 }
-            } else { // status === 'NK'
-                console.error(`Error del servicio: ${messageContent}`);
+            } else {
+                reject(new Error(`El bus reportó un error (NK): ${message}`));
             }
-            
-            // Cerrar la conexión SÓLO después de procesar una respuesta válida.
-            client.end();
-            // --- FIN DE LA CORRECCIÓN LÓGICA ---
-        }
-    });
+            clientSocket.end();
+        });
 
-    client.on('close', () => console.log('[Cliente] Conexión cerrada.'));
-    client.on('error', (err) => console.error(`[Cliente] Error de conexión: ${err.message}`));
+        clientSocket.on('close', () => console.log('[Cliente] Conexión cerrada.'));
+        clientSocket.on('error', (err) => reject(new Error(`Error de conexión: ${err.message}`)));
+    });
 }
 
-run();
+
+// Función principal que controla el flujo de ejecución
+async function startClient() {
+    const inquirer = (await import('inquirer')).default;
+    let exit = false;
+
+    while (!exit) {
+        try {
+            const { action } = await inquirer.prompt([{
+                type: 'list',
+                name: 'action',
+                message: '🔭 ¿Qué deseas hacer en el catálogo de productos?',
+                choices: [
+                    { name: '📚 Ver Catálogo Completo', value: 'list' },
+                    { name: '🔍 Buscar un producto por término', value: 'search' },
+                    { name: '📊 Aplicar Filtros Interactivos', value: 'filter' },
+                    new inquirer.Separator(),
+                    { name: '🚪 Salir', value: 'exit' },
+                ]
+            }]);
+
+            let requestPayload;
+            let products = [];
+
+            switch (action) {
+                case 'list':
+                    requestPayload = { action: 'list_all' };
+                    products = await sendRequest(requestPayload);
+                    displayProducts(products);
+                    break;
+                
+                case 'search':
+                    const { term } = await inquirer.prompt([{ type: 'input', name: 'term', message: 'Ingresa el término a buscar:' }]);
+                    if (!term.trim()) {
+                        console.log("❌ La búsqueda no puede estar vacía.");
+                        continue;
+                    }
+                    requestPayload = { action: 'search', term };
+                    products = await sendRequest(requestPayload);
+                    displayProducts(products);
+                    break;
+
+                case 'filter':
+                    console.log("\n--- Filtros Interactivos (deja en blanco para ignorar) ---");
+                    const { marca } = await inquirer.prompt([{ type: 'input', name: 'marca', message: 'Filtrar por marca:' }]);
+                    const { color } = await inquirer.prompt([{ type: 'input', name: 'color', message: 'Filtrar por color:' }]);
+                    const { precio_min } = await inquirer.prompt([{ type: 'number', name: 'precio_min', message: 'Precio mínimo (ej: 1000):', default: undefined }]);
+                    const { precio_max } = await inquirer.prompt([{ type: 'number', name: 'precio_max', message: 'Precio máximo (ej: 5000):', default: undefined }]);
+
+                    const criteria = {};
+                    if (marca.trim()) criteria.marca = marca.trim();
+                    if (color.trim()) criteria.color = color.trim();
+                    if (precio_min) criteria.precio_min = precio_min;
+                    if (precio_max) criteria.precio_max = precio_max;
+                    
+                    if (Object.keys(criteria).length === 0) {
+                        console.log("⚠️ No se aplicó ningún filtro.");
+                        continue;
+                    }
+
+                    requestPayload = { action: 'filter', criteria };
+                    products = await sendRequest(requestPayload);
+                    displayProducts(products);
+                    break;
+
+                case 'exit':
+                    exit = true;
+                    console.log("\n👋 ¡Hasta luego!");
+                    break;
+            }
+        } catch (error) {
+            console.error("\n❌ Ha ocurrido un error:", error.message);
+        }
+        if (!exit) {
+           await inquirer.prompt([{type: 'input', name: 'continue', message: '\nPresiona ENTER para volver al menú...'}]);
+        }
+    }
+    // Cierra la conexión de mongoose si está abierta
+    if(mongoose.connection.readyState === 1) {
+        mongoose.connection.close();
+    }
+}
+
+startClient();

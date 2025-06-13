@@ -97,8 +97,35 @@ async function filtrarProductos(criteria) {
     }
 }
 
+// RF5
+
+/**
+ * @description Obtiene los detalles completos de un único producto por su ID.
+ * @param {string} productoId El ID del producto.
+ * @returns {Promise<Object>} El documento completo del producto.
+ */
+async function obtenerDetallesProducto(productoId) {
+    console.log(`--- [catalogLogic] INICIANDO obtenerDetallesProducto para ID: ${productoId} ---`);
+    if (!productoId) throw new Error("Se requiere un ID de producto.");
+    
+    try {
+        // Usamos .lean() para un mejor rendimiento
+        const producto = await Product.findById(productoId).lean();
+        if (!producto) throw new Error(`Producto con ID ${productoId} no encontrado.`);
+        
+        console.log(`--- [catalogLogic] ÉXITO: Detalles de '${producto.nombre}' encontrados.`);
+        return producto;
+    } catch (error) {
+        console.error("--- [catalogLogic] ERROR en obtenerDetallesProducto ---:", error);
+        // Lanza el error para que el servicio que llama lo maneje
+        throw error;
+    }
+}
+
+
 module.exports = {
     listarTodosLosProductos,
     buscarProductos,
-    filtrarProductos
+    filtrarProductos,
+    obtenerDetallesProducto
 };

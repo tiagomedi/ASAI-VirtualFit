@@ -1,13 +1,12 @@
-// services/catalogService.js
+// services/cartService.js
 const { connectDB } = require('../../database/db.js');
 const net = require('net');
-const catalogLogic = require('../service/catalogLogic.js');
+const cartLogic = require('./cartLogic.js');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
-const SERVICE_NAME = 'catal'; // Nombre del servicio (5 caracteres)
+const SERVICE_NAME = 'carro'; // Nombre del servicio (5 caracteres)
 
-// Función para registrar el servicio en el bus
 function registerService(socket) {
     const service = 'sinit'.padEnd(5, ' ');
     const data = SERVICE_NAME.padEnd(5, ' ');
@@ -17,7 +16,6 @@ function registerService(socket) {
     console.log(`[${SERVICE_NAME}Service] -> Registrando servicio...`);
 }
 
-// Función para enviar respuestas al bus
 function sendResponse(socket, data) {
     const service = SERVICE_NAME.padEnd(5, ' ');
     const payload = data;
@@ -28,9 +26,8 @@ function sendResponse(socket, data) {
     socket.write(fullMessage);
 }
 
-// Función principal del servicio
 async function startService() {
-    await connectDB();
+    await connectDB(); // El servicio necesita DB para encontrar al usuario
     const serviceSocket = new net.Socket();
 
     const connectToBus = () => serviceSocket.connect(BUS_PORT, BUS_HOST);
@@ -51,26 +48,28 @@ async function startService() {
         }
 
         console.log(`[${SERVICE_NAME}Service] <- Datos recibidos: ${rawData}`);
-        const message = rawData.substring(10); // Los datos empiezan después de NNNNNSSSSS
+        const message = rawData.substring(10);
 
         (async () => {
             try {
-                const requestData = JSON.parse(message);
+                const req = JSON.parse(message);
                 let result;
 
-                // Decidimos qué acción tomar basándonos en el payload
-                switch (requestData.action) {
-                    case 'list_all':
-                        result = await catalogLogic.listarTodosLosProductos();
+                switch (req.action) {
+                    case 'view':
+                        result = await cartLogic.verCarrito(req.user_id);
                         break;
-                    case 'search':
-                        result = await catalogLogic.buscarProductos(requestData.term);
+                    case 'add':
+                        result = await cartLogic.agregarAlCarrito(req.user_id, req.producto_id, req.cantidad);
                         break;
-                    case 'filter':
-                        result = await catalogLogic.filtrarProductos(requestData.criteria);
+                    case 'update':
+                        result = await cartLogic.modificarCantidad(req.user_id, req.producto_variacion_id, req.nueva_cantidad);
+                        break;
+                    case 'remove':
+                        result = await cartLogic.eliminarDelCarrito(req.user_id, req.producto_variacion_id);
                         break;
                     default:
-                        throw new Error(`Acción desconocida: ${requestData.action}`);
+                        throw new Error(`Acción desconocida: ${req.action}`);
                 }
                 
                 sendResponse(serviceSocket, JSON.stringify(result));
@@ -84,7 +83,7 @@ async function startService() {
     });
 
     serviceSocket.on('close', () => {
-        console.log(`[${SERVICE_NAME}Service] Conexión cerrada. Reintentando en 5 segundos...`);
+        console.log(`[${SERVICE_NAME}Service] Conexión cerrada. Reintentando...`);
         isInitialized = false;
         setTimeout(connectToBus, 5000);
     });
