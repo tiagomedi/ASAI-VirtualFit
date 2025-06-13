@@ -47,7 +47,7 @@ function waitForResponse(socket, timeoutMs) {
                 const messageContent = fullPayload.substring(5);
 
                 if (destinationId === CLIENT_ID) {
-                    // ¡Mensaje para nosotros! Resolvemos la promesa.
+                  
                     clearTimeout(timeoutId); // Cancelar el timeout
                     socket.removeListener('data', dataListener); // Limpiar el listener
                     try {
