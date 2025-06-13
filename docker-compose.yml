@@ -5,4 +5,3 @@ services:
     ports:
       - "5001:5000"
     container_name: asai
-    #restart: unless-stopped # para que el bus se reinicie si se cae o al reiniciar Docker
