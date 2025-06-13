@@ -1,6 +1,8 @@
 {
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "inquirer": "^12.6.3",
+    "mongoose": "^8.15.2",
     "uuid": "^11.1.0",
     "zeromq": "^6.4.2"
   }
