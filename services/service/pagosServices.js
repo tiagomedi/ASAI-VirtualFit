@@ -46,7 +46,7 @@ async function startService() {
                     if (requestData.action === 'procesar_pago') {
                         session.startTransaction();
                         resultado = await procesarPago(requestData.payload, session);
-                        await session.commitTransaction(); // El commit es crucial
+                        await session.commitTransaction();
                     } else {
                         throw new Error(`Acción no reconocida: '${requestData.action}'`);
                     }
