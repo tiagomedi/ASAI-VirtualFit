@@ -1,5 +1,3 @@
-// services/authService.js
-
 const { connectDB } = require('../../database/db.js');
 const net = require('net');
 const { crearUsuario, autenticarUsuario } = require('./userLogic.js');
