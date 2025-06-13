@@ -1,5 +1,3 @@
-// client/cli/log-usuario.js
-
 const net = require('net');
 const { v4: uuidv4 } = require('uuid');
 
