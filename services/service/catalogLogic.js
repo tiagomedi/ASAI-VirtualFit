@@ -11,7 +11,7 @@ async function listarTodosLosProductos() {
         // Usamos .lean() para obtener objetos JSON puros, es más rápido para solo lectura.
         // Seleccionamos solo los campos más relevantes para el catálogo.
         const productos = await Product.find({})
-            .select('nombre marca categoria variaciones')
+            .select('nombre marca categoria reseñas variaciones')
             .lean();
         console.log(`--- [catalogLogic] ÉXITO: Encontrados ${productos.length} productos.`);
         return productos;
@@ -39,6 +39,7 @@ async function buscarProductos(termino) {
             $or: [
                 { nombre: regex },
                 { descripcion: regex },
+                { reseñas : regex },
                 { tags: regex }
             ]
         }).select('nombre marca categoria variaciones').lean();
@@ -87,7 +88,7 @@ async function filtrarProductos(criteria) {
             query.variaciones = { $elemMatch: variacionesQuery };
         }
         
-        const productos = await Product.find(query).select('nombre marca categoria variaciones').lean();
+        const productos = await Product.find(query).select('nombre marca categoria reseñas variaciones').lean();
         console.log(`--- [catalogLogic] ÉXITO: Encontrados ${productos.length} productos con los filtros aplicados.`);
         return productos;
 
