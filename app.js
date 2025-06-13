@@ -1,7 +1,7 @@
-// Inicializar todos los servicios (service) y clientes (cli)
+// Inicializar todos los servicios (service)
 const { spawn } = require('child_process');
 const path = require('path');
-//SERVICIOS
+
 const services = [
     'services/service/catalogService.js',
     'services/service/cartService.js',
