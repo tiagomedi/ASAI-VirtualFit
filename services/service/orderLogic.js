@@ -1,13 +1,13 @@
-const { mongoose } = require('../../database/db'); 
+const { mongoose } = require('../../database/db.js'); 
 const Order = require('../../database/models/order.model');
 const Product = require('../../database/models/product.model');
 const User = require('../../database/models/user.model');
 
+// --- FUNCIÓN PARA CREAR ORDEN ---
 async function crearOrden(orderData) {
     console.log("--- [orderLogic] INICIANDO crearOrden ---");
-    // Ya no recibimos producto_variacion_id en los items
     const { user_id, items, direccion_id, metodo_pago_id } = orderData;
-
+    
     try {
         let totalPago = 0;
         const itemsSnapshot = [];
@@ -15,24 +15,18 @@ async function crearOrden(orderData) {
         for (const item of items) {
             const producto = await Product.findById(item.producto_id);
             if (!producto) throw new Error(`Producto con ID ${item.producto_id} no encontrado.`);
-            
-            // Si no hay variaciones o el array está vacío, lanzamos un error.
-            if (!producto.variaciones || producto.variaciones.length === 0) {
-                throw new Error(`El producto '${producto.nombre}' no tiene variaciones disponibles.`);
-            }
-            // Tomamos la PRIMERA variación del array.
-            const variacion = producto.variaciones[0]; 
-            // -------------------------
+            if (!producto.variaciones || producto.variaciones.length === 0) throw new Error(`El producto '${producto.nombre}' no tiene variaciones.`);
+            const variacion = producto.variaciones[0];
 
-            if (typeof variacion.precio !== 'number') throw new Error(`El producto '${producto.nombre}' no tiene un precio válido.`);
-            if (variacion.stock < item.cantidad) throw new Error(`Stock insuficiente para ${producto.nombre}.`);
+            if (typeof variacion.precio !== 'number') throw new Error(`El producto no tiene un precio válido.`);
+            if (variacion.stock < item.cantidad) throw new Error(`Stock insuficiente.`);
 
             variacion.stock -= item.cantidad;
             totalPago += variacion.precio * item.cantidad;
 
             itemsSnapshot.push({
                 producto_id: producto._id,
-                producto_variacion_id: variacion._id, // Mongoose le da un _id, así que podemos guardarlo
+                producto_variacion_id: variacion._id, 
                 nombre: producto.nombre,
                 talla: variacion.talla,
                 color: variacion.color,
@@ -43,13 +37,11 @@ async function crearOrden(orderData) {
         }
 
         const usuario = await User.findById(user_id);
-        if (!usuario) throw new Error(`Usuario con ID ${user_id} no encontrado.`);
-
+        if (!usuario) throw new Error(`Usuario no encontrado.`);
         const direccionEnvio = usuario.direcciones.id(direccion_id);
-        if (!direccionEnvio) throw new Error(`Dirección con ID ${direccion_id} no encontrada.`);
-
+        if (!direccionEnvio) throw new Error(`Dirección no encontrada.`);
         const metodoPagoUsado = usuario.metodos_pago.id(metodo_pago_id);
-        if (!metodoPagoUsado) throw new Error(`Método de pago con ID ${metodo_pago_id} no encontrado.`);
+        if (!metodoPagoUsado) throw new Error(`Método de pago no encontrado.`);
         
         const orden = new Order({
             user_id,
@@ -70,4 +62,27 @@ async function crearOrden(orderData) {
     } 
 }
 
-module.exports = { crearOrden };
+// --- FUNCIÓN PARA BUSCAR ÓRDENES ---
+async function buscarOrdenesPorUsuario(email) {
+    console.log(`--- [orderLogic] Buscando usuario con email: ${email}`);
+    const usuario = await User.findOne({ correo: email });
+    if (!usuario) throw new Error(`No se encontró un usuario con el correo ${email}`);
+
+    console.log(`--- [orderLogic] Buscando órdenes para el usuario ID: ${usuario._id}`);
+    const ordenes = await Order.find({ user_id: usuario._id }).sort({ createdAt: -1 });
+    
+    console.log(`--- [orderLogic] Se encontraron ${ordenes.length} órdenes. Creando resumen...`);
+    
+    // Creamos un array de objetos más pequeños (resúmenes)
+    const resumenOrdenes = ordenes.map(orden => ({
+        _id: orden._id,
+        createdAt: orden.createdAt,
+        estado: orden.estado,
+        total_pago: orden.total_pago,
+        itemCount: orden.items.length
+    }));
+
+    return resumenOrdenes;
+}
+
+module.exports = { crearOrden, buscarOrdenesPorUsuario };
