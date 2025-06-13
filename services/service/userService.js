@@ -1,15 +1,18 @@
+<<<<<<< HEAD
 
 // Contenido para services/perfil/perfilService.js
 const net = require('net');
 const mongoose = require('mongoose'); // Lo necesitamos para validar ObjectIDs
 const connectDB = require('../../database/db.js');
 const User = require('../../database/models/user.model');
+=======
+const bcrypt = require('bcrypt');
+>>>>>>> parent of b304370 (Cliclientes)
 
-// Función principal asíncrona para controlar el orden de inicio
-const startService = async () => {
-  // 1. PRIMERO: Conectamos a la DB y esperamos a que esté lista.
-  await connectDB();
+const User = require('../../database/models/user.model'); 
+const Product = require('../../database/models/product.model');
 
+<<<<<<< HEAD
 const bcrypt = require('bcrypt');
 const User = require('../../database/models/user.model'); 
 
@@ -87,13 +90,21 @@ const User = require('../../database/models/user.model');
       const cuerpo = servicio + estado + respuesta;
       const header = String(cuerpo.length).padStart(5, '0');
       sock.write(header + cuerpo);
+=======
+const SALT_ROUNDS = 10;
+
+async function crearUsuario(correo, passwordPlano) {
+    console.log('[userService] Buscando si el usuario ya existe...');
+    const usuarioExistente = await User.findOne({ correo: correo.toLowerCase() });
+    if (usuarioExistente) {
+        throw new Error('El correo electrónico ya está en uso.');
+>>>>>>> parent of b304370 (Cliclientes)
     }
-  });
 
-  sock.on('error', err => console.error('[PerfilService] ❌ Error:', err.message));
-  sock.on('close', () => console.log('[PerfilService] 🔌 Desconectado del bus.'));
-};
+    console.log('[userService] Hasheando contraseña...');
+    const hash_password = await bcrypt.hash(passwordPlano, SALT_ROUNDS);
 
+<<<<<<< HEAD
 // Ejecutamos la función principal para iniciar el servicio
 startService();
 
@@ -159,3 +170,22 @@ module.exports = {
     crearUsuario,
     autenticarUsuario
 };
+=======
+    const newUser = new User({
+        correo: correo,
+        hash_password: hash_password
+    });
+    
+    console.log('[userService] Guardando nuevo usuario en la BD...');
+    await newUser.save();
+    console.log('[userService] Usuario guardado con éxito.');
+
+    const userObject = newUser.toObject();
+    delete userObject.hash_password;
+    
+    return userObject;
+}
+module.exports = {
+    crearUsuario
+};
+>>>>>>> parent of b304370 (Cliclientes)
