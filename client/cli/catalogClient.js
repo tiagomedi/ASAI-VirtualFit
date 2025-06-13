@@ -60,6 +60,18 @@ function displayProducts(products, title = 'Catálogo de Productos') {
     products.forEach((p, index) => {
         console.log(`${index + 1}. 📦 Nombre: ${p.nombre} [ID: ${p._id}]`);
         console.log(`   Marca: ${p.marca || 'N/A'}`);
+
+        let puntuacionPromedioTexto = 'Sin reseñas'; 
+        if (p.reseñas && p.reseñas.length > 0) {
+            const sumaPuntuaciones = p.reseñas.reduce((suma, reseña) => {
+                return suma + reseña.puntuacion; 
+            }, 0);
+            
+            const promedio = sumaPuntuaciones / p.reseñas.length;
+            puntuacionPromedioTexto = `⭐ ${promedio.toFixed(1)} (${p.reseñas.length} reseña(s))`;
+        }
+        console.log(`   Puntuación promedio: ${puntuacionPromedioTexto}`);
+
         if (p.variaciones && p.variaciones.length > 0) {
             const v = p.variaciones[0];
             console.log(`   - Var: ${v.color || ''} ${v.talla || ''} | Precio: $${v.precio} | Stock: ${v.stock}`);
