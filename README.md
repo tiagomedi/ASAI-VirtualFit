@@ -36,19 +36,3 @@ Tener Docker y Docker Compose instalados (Docker Desktop).
     * `cd client`
     * `python3 example_client.py`
     * Ingresa los números cuando se te solicite.
-
-## Pasos a ejecutar para `orderClient.js` y `orderService.js`
-1. Inicia el BUS SOA (soabus):
-    * Abre una terminal en la raíz.
-    * `docker-compose up -d`
-    1.1. Para reiniciar el bus rapidamente:
-    * `docker-compose restart soabus`
-2. Ejecutar el servicio de pedidos (order):
-    * Abre una terminal.
-    * `cd services/service/`
-    * `node orderService.js`
-3. Ejecutar el cliente de pedidos (order):
-    * Abre una terminal
-    * `cd cliente/cli/`
-    * `node orderClient.js`
-    * Ingresa un correo valido, direccion de envio, metodo de pago, el id del producto a comprar, la cantidad y y/N añadir otro producto.
