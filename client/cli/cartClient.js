@@ -39,8 +39,6 @@ async function startClient() {
     const inquirer = (await import('inquirer')).default;
     clientSocket = new net.Socket();
 
-    // --- ¡ESTA ES LA CORRECCIÓN! ---
-    // El orden correcto es (puerto, host)
     clientSocket.connect(BUS_PORT, BUS_HOST, () => {
         console.log(`[Cliente] Conectado al bus en ${BUS_PORT}.`);
         mainMenu(inquirer);
