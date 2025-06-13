@@ -54,3 +54,4 @@ Tener Docker y Docker Compose instalados (Docker Desktop).
     * `cd cliente/cli/`
     * `node orderClient.js`
     * Ingresa un correo valido, direccion de envio, metodo de pago, el id del producto a comprar, la cantidad y y/N añadir otro producto.
+    
