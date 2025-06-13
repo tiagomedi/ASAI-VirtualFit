@@ -1,4 +1,3 @@
-// services/pagos/pagosLogic.js
 const User = require('../../database/models/user.model');
 const Product = require('../../database/models/product.model');
 const Order = require('../../database/models/order.model');
