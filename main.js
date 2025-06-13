@@ -1,5 +1,8 @@
 // Intefaz de Usuario (CLI)
 // Login -> 
-// - Usuario
-// - Catalogo
-// - Lista de Deseos
+//          - Usuario
+//          - Catalogo
+//          - Carrito
+//          - Lista de Deseos
+//          - Asistente ASAI
+//          - Admin (modo admin)
