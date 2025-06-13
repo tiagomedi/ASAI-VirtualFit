@@ -3,7 +3,7 @@
 const { connectDB } = require('../../database/db.js');
 const net = require('net');
 const User = require('../../database/models/user.model');
-const productService = require('./productService');
+const productService = require('./productLogic.js');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;

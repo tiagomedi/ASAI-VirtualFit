@@ -2,7 +2,7 @@
 
 const { connectDB } = require('../../database/db.js');
 const net = require('net');
-const { crearUsuario, autenticarUsuario } = require('./userService');
+const { crearUsuario, autenticarUsuario } = require('./userLogic.js');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
