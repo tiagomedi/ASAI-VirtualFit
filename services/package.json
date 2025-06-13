@@ -2,6 +2,8 @@
   "dependencies": {
     "bcrypt": "^6.0.0",
     "inquirer": "^12.6.3",
+    "openai": "^5.3.0",
+    "uuid": "^11.1.0",
     "zeromq": "^6.4.2"
   }
 }

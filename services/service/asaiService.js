@@ -2,8 +2,8 @@
 
 const { connectDB } = require('../../database/db.js');
 const net = require('net');
-const Product = require('../../database/models/product.model'); // Para buscar productos
-const Order = require('../../database/models/order.model');   // Para buscar pedidos
+const Product = require('../../database/models/product.model');
+const Order = require('../../database/models/order.model');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
@@ -11,112 +11,78 @@ const ASAI_SERVICE_NAME = 'asais';
 
 /**
  * La función principal que interpreta la consulta del usuario.
- * Usa lógica simple de palabras clave.
- * @param {string} query - La consulta en texto plano del usuario.
- * @param {string} userId - El ID del usuario que pregunta.
- * @returns {Promise<string>} Una respuesta en texto plano para el usuario.
  */
 async function interpretarConsulta(query, userId) {
-    const q = query.toLowerCase();
+    const q = query.toLowerCase().trim();
     console.log(`[asaiService] Interpretando consulta para el usuario ${userId}: "${q}"`);
 
-    // --- LÓGICA DE PALABRAS CLAVE ---
+    // --- LÓGICA DE PALABRAS CLAVE MEJORADA ---
 
     // 1. Búsqueda de estado de pedido
-    if (q.includes('pedido') || q.includes('orden')) {
-        const ultimoPedido = await Order.findOne({ user_id: userId }).sort({ createdAt: -1 });
+    if (q.includes('pedido') || q.includes('orden') || q.includes('compra')) {
+        const ultimoPedido = await Order.findOne({ user_id: userId }).sort({ createdAt: -1 }).lean();
         if (!ultimoPedido) {
-            return "No he encontrado pedidos recientes en tu historial.";
+            return "Aún no tienes pedidos en tu historial. ¡Anímate a hacer tu primera compra!";
         }
-        return `El estado de tu último pedido (ID: ...${ultimoPedido._id.toString().slice(-6)}) es: ${ultimoPedido.estado}. Se pagó un total de ${ultimoPedido.total_pago}.`;
+        return `Tu último pedido (ID: ...${ultimoPedido._id.toString().slice(-6)}) se encuentra en estado: "${ultimoPedido.estado}". Se realizó el ${new Date(ultimoPedido.createdAt).toLocaleDateString()}.`;
     }
 
-    // 2. Búsqueda de productos (simple)
-    if (q.includes('buscar') || q.includes('necesito') || q.includes('quiero')) {
-        // Creamos un filtro de búsqueda para MongoDB
+    // 2. Búsqueda de productos
+    const palabrasBusqueda = ['buscar', 'necesito', 'quiero', 'muéstrame', 'tienes'];
+    if (palabrasBusqueda.some(palabra => q.startsWith(palabra))) {
         const filtro = {};
-        
-        // Extraer palabras clave de productos (zapatillas, camiseta, etc.)
-        const keywords = ['zapatillas', 'camiseta', 'pantalon', 'chaqueta'];
+        const keywords = ['zapatillas', 'camiseta', 'pantalon', 'chaqueta', 'short', 'poleron'];
         keywords.forEach(kw => {
-            if (q.includes(kw)) {
-                filtro.nombre = new RegExp(kw, 'i'); // Búsqueda insensible a mayúsculas
-            }
+            if (q.includes(kw)) filtro.nombre = new RegExp(kw, 'i');
         });
-        
-        // Extraer colores
-        const colores = ['rojo', 'azul', 'negro', 'blanco'];
+        const colores = ['rojo', 'azul', 'negro', 'blanco', 'verde', 'gris'];
         colores.forEach(color => {
-            if (q.includes(color)) {
-                filtro['variaciones.color'] = new RegExp(color, 'i');
-            }
+            if (q.includes(color)) filtro['variaciones.color'] = new RegExp(color, 'i');
         });
-
-        // Extraer tallas
         const tallas = ['xs', 's', 'm', 'l', 'xl'];
         tallas.forEach(talla => {
-            if (q.includes(`talla ${talla}`)) {
-                filtro['variaciones.talla'] = talla.toUpperCase();
-            }
+            if (q.includes(`talla ${talla}`)) filtro['variaciones.talla'] = talla.toUpperCase();
         });
 
         if (Object.keys(filtro).length === 0) {
-            return "No entendí qué producto buscas. Prueba con 'buscar zapatillas rojas talla M'.";
+            return "Puedo buscar productos por ti. ¿Qué te interesa? Prueba con 'buscar camiseta negra' o 'muéstrame pantalones talla M'.";
         }
         
         console.log('[asaiService] Filtro de búsqueda generado:', filtro);
-        const productos = await Product.find(filtro).limit(3);
+        const productos = await Product.find(filtro).limit(3).lean();
 
         if (productos.length === 0) {
-            return "No encontré productos que coincidan con tu búsqueda. Intenta con otros términos.";
+            return "Lo siento, no encontré productos que coincidan con tu búsqueda. Puedes intentar con otros términos o ser más general.";
         }
 
-        let respuesta = "Encontré esto para ti:\n";
+        let respuesta = "¡Claro! Encontré esto para ti:\n\n";
         productos.forEach(p => {
-            respuesta += `- ${p.nombre} (Marca: ${p.marca})\n`;
+            respuesta += `  - Producto: ${p.nombre} (Marca: ${p.marca})\n`;
+            if (p.variaciones && p.variaciones.length > 0) {
+                const variacionInfo = p.variaciones.map(v => `    · Talla: ${v.talla || 'N/A'}, Color: ${v.color || 'N/A'}, Precio: $${v.precio}`).join('\n');
+                respuesta += `${variacionInfo}\n\n`;
+            }
         });
         return respuesta;
     }
 
-    // 3. Ayuda o recomendación
-    if (q.includes('ayuda') || q.includes('recomienda') || q.includes('talla')) {
-        return "¡Claro! Puedo ayudarte a encontrar lo que buscas. ¿Qué tipo de prenda o para qué actividad la necesitas? Luego podemos filtrar por talla, color o marca.";
+    // 3. Saludos y Bienvenida Inicial
+    const saludos = ['hola', 'buenos dias', 'buenas'];
+    if (saludos.some(saludo => q.startsWith(saludo)) || q === '') {
+         return "¡Hola! Soy ASAI, tu asistente de compras. ¿Qué te gustaría hacer?\n" +
+                "  1. Buscar un producto (ej: 'buscar zapatillas rojas')\n" +
+                "  2. Consultar mi último pedido (ej: 'estado de mi pedido')\n" +
+                "  3. Pedir ayuda (ej: 'ayuda con mi talla')";
     }
-
-    // 4. Saludo o respuesta por defecto
-    return "Hola, soy ASAI. ¿En qué puedo ayudarte? Puedes pedirme que busque productos (ej: 'buscar camiseta azul') o que te informe sobre tu último pedido.";
+    
+    // 4. Respuesta por defecto si no entiende nada
+    return "No estoy seguro de haber entendido. Puedes probar con una de estas opciones:\n" +
+           "  - 'buscar [producto] [color]'\n" +
+           "  - 'estado de mi orden'\n" +
+           "  - 'ayuda'";
 }
 
-
-// --- Lógica del Worker (muy similar a los otros servicios) ---
-
-async function createAsaiWorker() {
-    const workerSocket = new net.Socket();
-    let buffer = '';
-
-    workerSocket.connect({ host: BUS_HOST, port: BUS_PORT }, () => {
-        console.log(`[Worker ${ASAI_SERVICE_NAME}] Conectado al bus.`);
-        sendMessage(workerSocket, 'sinit', ASAI_SERVICE_NAME);
-    });
-
-    workerSocket.on('data', async (dataChunk) => {
-        buffer += dataChunk.toString();
-        while (true) {
-            if (buffer.length < 5) break;
-            const length = parseInt(buffer.substring(0, 5), 10);
-            if (isNaN(length) || buffer.length < 5 + length) break;
-            
-            const fullPayload = buffer.substring(5, 5 + length);
-            buffer = buffer.substring(5 + length);
-
-            const destination = fullPayload.substring(0, 5);
-            if (destination !== ASAI_SERVICE_NAME) continue;
-            
-            await handleAsaiRequest(workerSocket, fullPayload.substring(5));
-        }
-    });
-    // ... (listeners 'close' y 'error')
-}
+// --- Lógica del Worker y Servidor ---
 
 async function handleAsaiRequest(socket, messageContent) {
     let responseClientId = null;
@@ -124,15 +90,10 @@ async function handleAsaiRequest(socket, messageContent) {
         const requestData = JSON.parse(messageContent);
         responseClientId = requestData.clientId;
         const { userId, query } = requestData;
-
-        if (!userId || !query) throw new Error('Petición a ASAI inválida.');
-
-        // La lógica principal del asistente
+        if (!userId || query === undefined) throw new Error('Petición a ASAI inválida.');
         const asaiResponseText = await interpretarConsulta(query, userId);
-        
         const successPayload = { status: 'success', data: { respuesta: asaiResponseText } };
         sendMessage(socket, responseClientId, JSON.stringify(successPayload));
-
     } catch (error) {
         console.error(`[asaiService Handler] Error: ${error.message}`);
         if (responseClientId) {
@@ -140,6 +101,30 @@ async function handleAsaiRequest(socket, messageContent) {
             sendMessage(socket, responseClientId, JSON.stringify(errorPayload));
         }
     }
+}
+
+async function createAsaiWorker() {
+    const workerSocket = new net.Socket();
+    let buffer = '';
+    workerSocket.connect({ host: BUS_HOST, port: BUS_PORT }, () => {
+        console.log(`[Worker ${ASAI_SERVICE_NAME}] Conectado al bus.`);
+        sendMessage(workerSocket, 'sinit', ASAI_SERVICE_NAME);
+    });
+    workerSocket.on('data', async (dataChunk) => {
+        buffer += dataChunk.toString();
+        while (true) {
+            if (buffer.length < 5) break;
+            const length = parseInt(buffer.substring(0, 5), 10);
+            if (isNaN(length) || buffer.length < 5 + length) break;
+            const fullPayload = buffer.substring(5, 5 + length);
+            buffer = buffer.substring(5 + length);
+            const destination = fullPayload.substring(0, 5);
+            if (destination !== ASAI_SERVICE_NAME) continue;
+            await handleAsaiRequest(workerSocket, fullPayload.substring(5));
+        }
+    });
+    workerSocket.on('close', () => console.log(`[Worker ${ASAI_SERVICE_NAME}] Conexión cerrada.`));
+    workerSocket.on('error', (err) => console.error(`[Worker ${ASAI_SERVICE_NAME}] Error: ${err.message}`));
 }
 
 function sendMessage(socket, destination, message) {

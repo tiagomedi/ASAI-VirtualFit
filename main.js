@@ -2,12 +2,15 @@ const { spawn } = require('child_process');
 const path = require('path');
 
 /**
+ * Función helper para ejecutar un script de Node.js en un nuevo proceso.
  * @param {string} scriptName - Un nombre descriptivo para los logs.
  * @param {string} scriptPath - La ruta relativa al script a ejecutar.
  */
 function executeScript(scriptName, scriptPath) {
     const fullPath = path.join(__dirname, scriptPath);
-        // 'stdio: inherit' asegura que veamos los logs de ese script en esta terminal.
+    
+    // Inicia el script en un nuevo proceso de Node.
+    // 'stdio: inherit' asegura que veamos los logs de ese script en esta terminal.
     const child = spawn('node', [fullPath], { stdio: 'inherit' });
 
     child.on('close', (code) => {
@@ -28,12 +31,15 @@ function startApplication() {
     console.log('\n[MainOrchestrator] Paso 1: Lanzando los microservicios...');
     executeScript('Services Backend (app.js)', 'app.js');
 
+    // 2. Esperar a que los servicios se inicialicen
+    const startupDelay = 10000; // 10 segundos
     console.log(`\n[MainOrchestrator] Paso 2: Esperando ${startupDelay / 1000} segundos para que los servicios se estabilicen...`);
 
     setTimeout(() => {
+        // 3. Iniciar la interfaz de línea de comandos para el usuario
         console.log('\n[MainOrchestrator] Paso 3: Lanzando el cliente CLI (usuarioCLI.js)...');
         console.log('-------------------------------------------------------------------\n');
-        executeScript('User CLI', 'client/cli/usuarioCLI.js');
+        executeScript('User CLI', 'client/cli/usuarioCLI2.js');
     }, startupDelay);
 }
 

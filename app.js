@@ -9,9 +9,8 @@ const services = [
     'services/service/wishlistService.js',
     'services/service/authService.js',
     'services/service/orderService.js',
-    //'services/service/productService.js',
+    'services/service/perfilservice.js',
     'services/service/reseñaService.js'
-    //'services/service/userService.js'
 
 ];
 
