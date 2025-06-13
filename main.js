@@ -5,4 +5,5 @@
 //          - Carrito
 //          - Lista de Deseos
 //          - Asistente ASAI
-//          - Admin (modo admin)
+//          - Gestión Productos (modo admin)
+
