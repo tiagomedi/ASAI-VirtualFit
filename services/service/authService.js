@@ -2,6 +2,7 @@ require('../../database/db.js');
 const net = require('net');    
 const userService = require('./userService.js');
 
+
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
 const SERVICE_NAME = 'auths'; 
