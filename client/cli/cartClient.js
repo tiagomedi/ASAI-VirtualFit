@@ -1,4 +1,3 @@
-// clients/cartClient.js
 const net = require('net');
 const { connectDB, mongoose } = require('../../database/db.js');
 const User = require('../../database/models/user.model.js');
@@ -96,7 +95,6 @@ async function startClient() {
     });
 }
 
-// ... EL RESTO DEL ARCHIVO NO NECESITA CAMBIOS ...
 async function mainMenu(inquirer) {
     try {
         const { userEmail } = await inquirer.prompt([{ type: 'input', name: 'userEmail', message: '👤 Introduce tu correo para gestionar el carrito:' }]);
