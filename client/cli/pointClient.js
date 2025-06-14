@@ -1,5 +1,3 @@
-// clients/pointClient.js
-
 const net = require('net');
 const { connectDB, mongoose } = require('../../database/db.js');
 const User = require('../../database/models/user.model.js');
@@ -8,10 +6,9 @@ const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
 
 let clientSocket;
-let responsePromise = {}; // Variable global para manejar la promesa de respuesta
+let responsePromise = {};
 
-// --- FUNCIONES DE COMUNICACIÓN (Copiadas del Golden Code) ---
-
+// --- FUNCIONES DE COMUNICACIÓN  ---
 function sendMessage(serviceName, data) {
     const service = serviceName.padEnd(5, ' ');
     const payload = service + data;
@@ -39,7 +36,6 @@ function sendRequest(serviceName, requestPayload) {
 }
 
 // --- LÓGICA DEL CLIENTE ---
-
 async function startClient() {
     await connectDB();
     const inquirer = (await import('inquirer')).default;
@@ -50,7 +46,7 @@ async function startClient() {
         mainMenu(inquirer); // Inicia el menú interactivo
     });
 
-    // Manejador de datos entrantes (Copiado del Golden Code)
+    // Manejador de datos entrantes
     let buffer = '';
     clientSocket.on('data', (data) => {
         buffer += data.toString();
