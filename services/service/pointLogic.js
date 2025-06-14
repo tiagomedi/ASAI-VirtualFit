@@ -1,16 +1,4 @@
-// services/point/pointLogic.js
-
 const User = require('../../database/models/user.model');
-
-/**
- * Calcula y agrega puntos de lealtad a un usuario basado en el total de una compra.
- * La regla de negocio es: 1 punto por cada 1000 unidades monetarias gastadas.
- * 
- * @param {object} payload - El objeto con los datos de la solicitud.
- * @param {string} payload.user_id - El ID del usuario que recibirá los puntos.
- * @param {number} payload.total_pago - El monto total de la orden finalizada.
- * @returns {Promise<object>} Un objeto con un mensaje de éxito y el nuevo total de puntos.
- */
 async function agregarPuntos({ user_id, total_pago }) {
     console.log(`--- [pointLogic] Ejecutando lógica de negocio para usuario ${user_id} ---`);
 
