@@ -1,9 +1,11 @@
+// File: services/orderLogic.js
+
 const { mongoose } = require('../../database/db.js'); 
 const Order = require('../../database/models/order.model');
 const Product = require('../../database/models/product.model');
 const User = require('../../database/models/user.model');
 
-// --- FUNCIÓN PARA CREAR ORDEN ---
+// --- crearOrden se mantiene igual ---
 async function crearOrden(orderData) {
     console.log("--- [orderLogic] INICIANDO crearOrden ---");
     const { user_id, items, direccion_id, metodo_pago_id } = orderData;
@@ -62,18 +64,21 @@ async function crearOrden(orderData) {
     } 
 }
 
-// --- FUNCIÓN PARA BUSCAR ÓRDENES ---
+// --- FUNCIÓN DE BÚSQUEDA CON LÍMITE ---
 async function buscarOrdenesPorUsuario(email) {
     console.log(`--- [orderLogic] Buscando usuario con email: ${email}`);
     const usuario = await User.findOne({ correo: email });
     if (!usuario) throw new Error(`No se encontró un usuario con el correo ${email}`);
 
-    console.log(`--- [orderLogic] Buscando órdenes para el usuario ID: ${usuario._id}`);
-    const ordenes = await Order.find({ user_id: usuario._id }).sort({ createdAt: -1 });
+    console.log(`--- [orderLogic] Buscando las 5 órdenes más recientes para el usuario ID: ${usuario._id}`);
     
+    // --- CAMBIO CLAVE: AÑADIMOS .limit(5) ---
+    const ordenes = await Order.find({ user_id: usuario._id })
+                              .sort({ createdAt: -1 })
+                              .limit(5); // Traemos solo las últimas 5
+
     console.log(`--- [orderLogic] Se encontraron ${ordenes.length} órdenes. Creando resumen...`);
     
-    // Creamos un array de objetos más pequeños (resúmenes)
     const resumenOrdenes = ordenes.map(orden => ({
         _id: orden._id,
         createdAt: orden.createdAt,
