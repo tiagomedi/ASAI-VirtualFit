@@ -1,11 +1,8 @@
-// File: services/orderLogic.js
-
 const { mongoose } = require('../../database/db.js'); 
 const Order = require('../../database/models/order.model');
 const Product = require('../../database/models/product.model');
 const User = require('../../database/models/user.model');
 
-// --- crearOrden se mantiene igual ---
 async function crearOrden(orderData) {
     console.log("--- [orderLogic] INICIANDO crearOrden ---");
     const { user_id, items, direccion_id, metodo_pago_id } = orderData;
