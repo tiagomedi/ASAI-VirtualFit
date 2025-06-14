@@ -1,14 +1,12 @@
-// services/service/pointService.js
-
 const { connectDB, mongoose } = require('../../database/db.js');
 const net = require('net');
-const { agregarPuntos } = require('../service/pointLogic.js'); // Importa la nueva lógica
+const { agregarPuntos } = require('../service/pointLogic.js'); 
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
-const SERVICE_NAME = 'point'; // Nombre de nuestro nuevo servicio
+const SERVICE_NAME = 'point'; 
 
-// Función helper para crear el header de longitud, idéntica al Golden Code.
+// Función helper para crear el header de longitud
 function header(n) { return String(n).padStart(5, '0'); }
 
 async function startService() {
@@ -37,7 +35,7 @@ async function startService() {
             const messageToProcess = buffer.substring(0, 5 + length);
             buffer = buffer.substring(5 + length);
             
-            // Ignorar respuestas OK/NK del bus (por ejemplo, del registro sinit)
+            // Ignorar respuestas OK/NK del bus
             const statusCheck = messageToProcess.substring(10, 12);
             if (statusCheck === 'OK' || statusCheck === 'NK') continue;
             
@@ -51,8 +49,6 @@ async function startService() {
 
                     // Enrutamiento de la acción
                     if (requestData.action === 'add_points') {
-                        // No se necesita una transacción de Mongoose aquí, ya que la lógica solo
-                        // actualiza un único documento, lo cual es una operación atómica.
                         resultado = await agregarPuntos(requestData.payload);
                     } else {
                         throw new Error(`Acción no reconocida en servicio 'point': '${requestData.action}'`);
@@ -69,7 +65,6 @@ async function startService() {
                     
                     const errPayload = JSON.stringify({ error: error.message });
                     const serviceHeader = SERVICE_NAME.padEnd(5, ' ');
-                    // El bus añadirá 'NK' al principio, nosotros solo enviamos el payload de error.
                     const fullMessage = header(serviceHeader.length + errPayload.length) + serviceHeader + errPayload;
                     serviceSocket.write(fullMessage);
                 }
