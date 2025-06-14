@@ -1,5 +1,3 @@
-// services/service/pagosService.js
-
 const { connectDB, mongoose } = require('../../database/db.js');
 const net = require('net');
 const { procesarPago } = require('../service/pagosLogic.js'); 
@@ -28,9 +26,6 @@ async function startService() {
             if (buffer.length < 5) break;
             const length = parseInt(buffer.substring(0, 5), 10);
             if (isNaN(length) || buffer.length < 5 + length) {
-                // Buffer posiblemente incompleto, esperamos más datos.
-                // Si el length es erróneo, podría causar un bucle, pero es la lógica del golden code.
-                // En un sistema en producción se podría añadir un límite al buffer para evitar DoS.
                 break; 
             }
             const messageToProcess = buffer.substring(0, 5 + length);
@@ -49,7 +44,6 @@ async function startService() {
 
                     if (requestData.action === 'procesar_pago') {
                         session.startTransaction();
-                        // <-- MODIFICADO: Pasamos el 'serviceSocket' a la lógica de negocio
                         resultado = await procesarPago(requestData.payload, session, serviceSocket);
                         await session.commitTransaction();
                     } else {
