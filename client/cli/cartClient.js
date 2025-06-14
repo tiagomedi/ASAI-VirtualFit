@@ -24,7 +24,7 @@ function sendRequest(serviceName, requestPayload) {
 
         const timeout = setTimeout(() => {
             if (responsePromise.reject) {
-                responsePromise.reject(new Error("Timeout: El servidor no respondió a tiempo (30s)."));
+                responsePromise.reject(new Error("Timeout: El servidor no respondió a tiempo."));
                 responsePromise = {};
             }
         }, 1000);
