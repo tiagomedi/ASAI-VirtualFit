@@ -1,10 +1,7 @@
-// services/pagos/pagosLogic.js
-
 const User = require('../../database/models/user.model');
 const Product = require('../../database/models/product.model');
 const Order = require('../../database/models/order.model');
 
-// <-- NUEVO: Función helper para enviar mensajes a otros servicios desde aquí
 function _sendMessageToService(socket, serviceName, payload) {
     try {
         const service = serviceName.padEnd(5, ' ');
@@ -16,20 +13,16 @@ function _sendMessageToService(socket, serviceName, payload) {
         console.log(`[pagosLogic] -> Enviando mensaje asíncrono a '${serviceName}': ${fullMessage.substring(0,100)}...`);
         socket.write(fullMessage);
     } catch (error) {
-        // No lanzamos un error aquí para no romper el flujo principal. Solo lo registramos.
         console.error(`[pagosLogic] Error al intentar enviar mensaje al servicio '${serviceName}':`, error.message);
     }
 }
 
-
-// <-- MODIFICADO: La firma de la función ahora acepta el socket del servicio
 async function procesarPago({ user_id, direccion_id, metodo_pago_id }, session, serviceSocket) {
     console.log(`--- [pagosLogic] Ejecutando lógica de negocio dentro de la transacción ---`);
     const usuario = await User.findById(user_id).session(session);
     if (!usuario) throw new Error("Usuario no encontrado.");
     if (!usuario.carrito || usuario.carrito.items.length === 0) throw new Error("El carrito está vacío, no se puede procesar el pago.");
     
-    // ... (toda la lógica de validación de dirección, método de pago, stock, etc. permanece igual)
     const direccionEnvio = usuario.direcciones.find(d => d._id.toString() === direccion_id);
     if (!direccionEnvio) throw new Error("Dirección de envío no válida o no encontrada.");
     const metodoPagoUsado = usuario.metodos_pago.find(p => p._id.toString() === metodo_pago_id);
@@ -75,7 +68,6 @@ async function procesarPago({ user_id, direccion_id, metodo_pago_id }, session, 
     await usuario.save({ session });
     console.log(`[pagosLogic] Carrito del usuario ${user_id} vaciado.`);
     
-    // <-- NUEVO: Lógica para llamar al servicio 'point' después de que todo salió bien
     if (serviceSocket && savedOrder.total_pago > 0) {
         const pointPayload = {
             action: 'add_points',
@@ -84,7 +76,6 @@ async function procesarPago({ user_id, direccion_id, metodo_pago_id }, session, 
                 total_pago: savedOrder.total_pago
             }
         };
-        // Enviamos la solicitud al servicio 'point' y no esperamos respuesta (fire-and-forget)
         _sendMessageToService(serviceSocket, 'point', pointPayload);
     }
     
