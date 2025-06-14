@@ -1,3 +1,5 @@
+// services/service/pagosService.js
+
 const { connectDB, mongoose } = require('../../database/db.js');
 const net = require('net');
 const { procesarPago } = require('../service/pagosLogic.js'); 
@@ -26,8 +28,10 @@ async function startService() {
             if (buffer.length < 5) break;
             const length = parseInt(buffer.substring(0, 5), 10);
             if (isNaN(length) || buffer.length < 5 + length) {
-                buffer = '';
-                break;
+                // Buffer posiblemente incompleto, esperamos más datos.
+                // Si el length es erróneo, podría causar un bucle, pero es la lógica del golden code.
+                // En un sistema en producción se podría añadir un límite al buffer para evitar DoS.
+                break; 
             }
             const messageToProcess = buffer.substring(0, 5 + length);
             buffer = buffer.substring(5 + length);
@@ -45,7 +49,8 @@ async function startService() {
 
                     if (requestData.action === 'procesar_pago') {
                         session.startTransaction();
-                        resultado = await procesarPago(requestData.payload, session);
+                        // <-- MODIFICADO: Pasamos el 'serviceSocket' a la lógica de negocio
+                        resultado = await procesarPago(requestData.payload, session, serviceSocket);
                         await session.commitTransaction();
                     } else {
                         throw new Error(`Acción no reconocida: '${requestData.action}'`);
@@ -54,7 +59,7 @@ async function startService() {
                     const resPayload = JSON.stringify(resultado);
                     const serviceHeader = SERVICE_NAME.padEnd(5, ' ');
                     const fullMessage = header(serviceHeader.length + resPayload.length) + serviceHeader + resPayload;
-                    console.log(`[pagosService] -> Enviando respuesta: ${fullMessage.substring(0, 150)}...`);
+                    console.log(`[pagosService] -> Enviando respuesta al cliente original: ${fullMessage.substring(0, 150)}...`);
                     serviceSocket.write(fullMessage);
 
                 } catch (error) {
@@ -72,8 +77,8 @@ async function startService() {
         }
     });
 
-    serviceSocket.on('close', () => { console.log('Conexión cerrada. Reintentando...'); buffer = ''; setTimeout(connectToBus, 5000); });
-    serviceSocket.on('error', (err) => console.error('Error de socket:', err.message));
+    serviceSocket.on('close', () => { console.log('[pagosService] Conexión cerrada. Reintentando...'); buffer = ''; setTimeout(connectToBus, 5000); });
+    serviceSocket.on('error', (err) => console.error('[pagosService] Error de socket:', err.message));
     
     connectToBus();
 }
