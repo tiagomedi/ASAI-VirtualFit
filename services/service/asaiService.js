@@ -1,3 +1,5 @@
+// services/asaiService.js
+
 const { connectDB } = require('../../database/db.js');
 const net = require('net');
 const Product = require('../../database/models/product.model');
@@ -25,7 +27,7 @@ async function interpretarConsulta(query, userId) {
     const q = query.toLowerCase().trim();
     console.log(`[asaiService] Interpretando consulta para el usuario ${userId}: "${q}"`);
 
-    // Lógica de palabras clave (tu código actual ya es bueno)
+    // Tu lógica de palabras clave (ya es correcta)
     if (q.includes('pedido') || q.includes('orden')) {
         const ultimoPedido = await Order.findOne({ user_id: userId }).sort({ createdAt: -1 }).lean();
         if (!ultimoPedido) return "No tienes pedidos recientes.";
@@ -35,44 +37,10 @@ async function interpretarConsulta(query, userId) {
         // ... tu lógica de búsqueda ...
         return "He encontrado estos productos para ti: Zapatillas Rojas, Camiseta Azul.";
     }
-    return "¡Hola! Soy ASAI. ¿En qué puedo ayudarte? Prueba con 'buscar productos' o 'estado de mi pedido'.";
-}
-
-/**
- * Procesa un único mensaje completo que ha sido extraído del buffer.
- */
-async function processRequest(socket, fullPayload) {
-    const destination = fullPayload.substring(0, 5);
-    const messageContent = fullPayload.substring(5);
-
-    if (destination !== ASAI_SERVICE_NAME) return;
-
-    console.log(`[Worker ${ASAI_SERVICE_NAME}] Petición recibida.`);
-    let responseClientId = null;
-    let correlationId = null;
-
-    try {
-        const requestData = JSON.parse(messageContent);
-        responseClientId = requestData.clientId;
-        correlationId = requestData.correlationId;
-
-        if (!responseClientId || !correlationId || typeof requestData.query === 'undefined') {
-            throw new Error(`Petición a '${ASAI_SERVICE_NAME}' inválida.`);
-        }
-        
-        const asaiResponseText = await interpretarConsulta(requestData.query, requestData.userId);
-        
-        const successPayload = { status: 'success', correlationId, data: { respuesta: asaiResponseText } };
-        // Usa el MISMO socket que recibió la petición para responder
-        sendMessage(socket, responseClientId, JSON.stringify(successPayload));
-
-    } catch (error) {
-        console.error(`[Worker ${ASAI_SERVICE_NAME}] Error: ${error.message}`);
-        if (responseClientId && correlationId) {
-            const errorPayload = { status: 'error', correlationId, message: error.message };
-            sendMessage(socket, responseClientId, JSON.stringify(errorPayload));
-        }
+     if (q.includes('ayuda') || q.includes('recomienda') || q.includes('talla')) {
+        return "¡Claro! Puedo ayudarte a encontrar lo que buscas. ¿Qué tipo de prenda o para qué actividad la necesitas? Luego podemos filtrar por talla, color o marca.";
     }
+    return "¡Hola! Soy ASAI. ¿En qué puedo ayudarte? Prueba con 'buscar productos' o 'estado de mi pedido'.";
 }
 
 /**
@@ -87,6 +55,7 @@ async function createAsaiWorker() {
         sendMessage(workerSocket, 'sinit', ASAI_SERVICE_NAME);
     });
 
+    // Usamos 'for await...of' para manejar el stream de forma robusta
     try {
         for await (const dataChunk of workerSocket) {
             buffer += dataChunk.toString('utf8');
@@ -98,13 +67,46 @@ async function createAsaiWorker() {
                 const fullPayload = buffer.substring(5, 5 + length);
                 buffer = buffer.substring(5 + length);
                 
-                // Llamamos a nuestra función de procesamiento que usa el workerSocket para responder
-                await processRequest(workerSocket, fullPayload);
+                const destination = fullPayload.substring(0, 5);
+                const messageContent = fullPayload.substring(5);
+
+                if (destination !== ASAI_SERVICE_NAME) continue;
+
+                // --- Lógica de procesamiento integrada aquí ---
+                console.log(`[Worker ${ASAI_SERVICE_NAME}] Petición recibida.`);
+                let responseClientId = null;
+                let correlationId = null;
+
+                try {
+                    const requestData = JSON.parse(messageContent);
+                    responseClientId = requestData.clientId;
+                    correlationId = requestData.correlationId; // Opcional
+
+                    // Validamos que los datos esenciales estén presentes
+                    if (!responseClientId || typeof requestData.query === 'undefined') {
+                        throw new Error(`Petición a '${ASAI_SERVICE_NAME}' inválida.`);
+                    }
+                    
+                    const asaiResponseText = await interpretarConsulta(requestData.query, requestData.userId);
+                    
+                    const successPayload = { status: 'success', correlationId, data: { respuesta: asaiResponseText } };
+                    // Usamos el mismo socket que recibió la petición para responder
+                    sendMessage(workerSocket, responseClientId, JSON.stringify(successPayload));
+
+                } catch (error) {
+                    console.error(`[Worker ${ASAI_SERVICE_NAME}] Error: ${error.message}`);
+                    if (responseClientId) {
+                        const errorPayload = { status: 'error', correlationId, message: error.message };
+                        sendMessage(workerSocket, responseClientId, JSON.stringify(errorPayload));
+                    }
+                }
+                // --- Fin de la lógica de procesamiento ---
             }
         }
     } catch (err) {
         console.error(`[Worker ${ASAI_SERVICE_NAME}] Error en el stream: ${err.message}`);
     }
+    
     console.log(`[Worker ${ASAI_SERVICE_NAME}] Conexión cerrada.`);
 }
 
