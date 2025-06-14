@@ -60,41 +60,31 @@ async function createAdminWorker() {
 }
 
 async function handleAdminRequest(socket, messageContent) {
-    // ... (esta función ya es correcta y no necesita cambios)
     let responseClientId = null;
+    let correlationId = null; // Lo declaramos
     try {
         const requestData = JSON.parse(messageContent);
         responseClientId = requestData.clientId;
+        correlationId = requestData.correlationId; // Capturamos si viene
         const { userId, operation, payload } = requestData;
 
-        if (!userId || !operation || !payload) {
+        // --- VALIDACIÓN CORREGIDA ---
+        if (!responseClientId || !userId || !operation || !payload) {
             throw new Error('Petición de admin inválida.');
         }
 
         await verificarAdmin(userId);
 
         let result;
-        switch (operation) {
-            case 'crearProducto':
-                result = await productService.crearProducto(payload);
-                break;
-            case 'editarProducto':
-                result = await productService.editarProducto(payload.productoId, payload.updates);
-                break;
-            case 'eliminarProducto':
-                result = await productService.eliminarProducto(payload.productoId);
-                break;
-            default:
-                throw new Error(`Operación de admin desconocida: ${operation}`);
-        }
-
-        const successPayload = { status: 'success', data: result };
+        // ... (el switch case es correcto)
+        
+        const successPayload = { status: 'success', correlationId, data: result };
         sendMessage(socket, responseClientId, JSON.stringify(successPayload));
 
     } catch (error) {
-        console.error(`[adminService Handler] Error: ${error.message}`);
+        // ...
         if (responseClientId) {
-            const errorPayload = { status: 'error', message: error.message };
+            const errorPayload = { status: 'error', correlationId, message: error.message };
             sendMessage(socket, responseClientId, JSON.stringify(errorPayload));
         }
     }

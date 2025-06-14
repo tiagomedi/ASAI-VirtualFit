@@ -25,30 +25,32 @@ async function processRequest(socket, fullPayload, serviceName, handlerFunction)
     const destination = fullPayload.substring(0, 5);
     const messageContent = fullPayload.substring(5);
 
-    if (destination !== serviceName) return; // Ignorar mensajes que no son para nosotros
+    if (destination !== serviceName) return;
 
     console.log(`[Worker ${serviceName}] Petición recibida.`);
     let responseClientId = null;
-    let correlationId = null;
+    let correlationId = null; // Lo declaramos para usarlo si existe
 
     try {
         const requestData = JSON.parse(messageContent);
         responseClientId = requestData.clientId;
-        correlationId = requestData.correlationId;
+        correlationId = requestData.correlationId; // Capturamos el ID si viene
 
-        if (!responseClientId || !correlationId) {
-            throw new Error(`Petición a '${serviceName}' inválida.`);
+        // --- VALIDACIÓN CORREGIDA ---
+        // Solo validamos el clientId, que es esencial para responder.
+        if (!responseClientId) {
+            throw new Error(`La petición no contiene un 'clientId'.`);
         }
         
         const result = await handlerFunction(requestData.correo, requestData.password);
         
         const successPayload = { status: 'success', correlationId, data: result };
-        // Usa el MISMO socket que recibió la petición para responder
         sendMessage(socket, responseClientId, JSON.stringify(successPayload));
 
     } catch (error) {
         console.error(`[Worker ${serviceName}] Error: ${error.message}`);
-        if (responseClientId && correlationId) {
+        if (responseClientId) {
+            // El correlationId puede ser undefined aquí, y eso está bien.
             const errorPayload = { status: 'error', correlationId, message: error.message };
             sendMessage(socket, responseClientId, JSON.stringify(errorPayload));
         }
