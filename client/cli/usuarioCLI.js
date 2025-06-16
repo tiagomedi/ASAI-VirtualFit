@@ -1,112 +1,101 @@
-// client/cli/usuarioCLI.js
-
 const net = require('net');
 const { v4: uuidv4 } = require('uuid');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
-// Usamos CLIENT_ID como el nombre oficial para el ID de esta instancia.
 const CLIENT_ID = uuidv4().substring(0, 5);
 
-// --- Funciones Helper de Sockets ---
+const pendingResponses = new Map();
+const clientSocket = new net.Socket();
+let buffer = Buffer.alloc(0);
 
-/**
- * Formatea y envía un mensaje a través de un socket ya conectado.
- */
-function sendMessage(socket, service, message) {
-    const payload = service + message;
-    const header = String(Buffer.byteLength(payload, 'utf8')).padStart(5, '0');
-    try {
-        const parsed = JSON.parse(message);
-        const target = parsed.correo || parsed.operation || parsed.query || 'N/A';
-        console.log(`[Cliente] Enviando a '${service}': ${target}`);
-    } catch (e) {
-        console.log(`[Cliente] Enviando mensaje de sistema...`);
+// --- Manejo de buffer y mensajes ---
+
+clientSocket.on('data', (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+    processBuffer();
+});
+
+clientSocket.on('close', () => {
+    processBuffer(true); // Procesa lo que quede al cerrar
+    console.log('[Cliente] Conexión con el bus cerrada.');
+    // Limpia promesas pendientes
+    for (const [correlationId, handler] of pendingResponses.entries()) {
+        handler(new Error('La conexión con el bus se cerró inesperadamente.'), null);
     }
-    socket.write(header + payload);
+    pendingResponses.clear();
+});
+
+function processBuffer(force = false) {
+    while (buffer.length >= 5) {
+        const lengthStr = buffer.slice(0, 5).toString();
+        const length = parseInt(lengthStr, 10);
+        if (isNaN(length)) {
+            buffer = Buffer.alloc(0);
+            break;
+        }
+        if (buffer.length < 5 + length) {
+            if (force && buffer.length > 5) {
+                // Forzar procesamiento si el socket se cerró y hay datos
+                const msg = buffer.slice(5).toString();
+                handleMessage(msg);
+                buffer = Buffer.alloc(0);
+            }
+            break;
+        }
+        const msg = buffer.slice(5, 5 + length).toString();
+        handleMessage(msg);
+        buffer = buffer.slice(5 + length);
+    }
 }
 
-/**
- * Devuelve una Promesa que espera una respuesta dirigida a nuestro ID.
- * Usa un socket de escucha dedicado y maneja fragmentación TCP, ecos y timeouts.
- */
-function waitForResponse(timeoutMs = 10000) {
+function handleMessage(fullPayload) {
+    const destinationId = fullPayload.substring(0, 5);
+    const responseJson = fullPayload.substring(5);
+
+    if (destinationId !== CLIENT_ID) {
+        return;
+    }
+
+    try {
+        const response = JSON.parse(responseJson);
+        if (response.correlationId && pendingResponses.has(response.correlationId)) {
+            const handler = pendingResponses.get(response.correlationId);
+            pendingResponses.delete(response.correlationId);
+            handler(null, response);
+        }
+    } catch (e) {
+        // Manejo de error de parseo
+    }
+}
+
+// --- Envío de mensajes y promesas ---
+
+function sendMessage(service, message) {
+    const body = service + message;
+    const header = String(Buffer.byteLength(body, 'utf8')).padStart(5, '0');
+    clientSocket.write(header + body);
+    console.log(`[Cliente] Enviando a '${service}'... (Header: ${header})`);
+}
+
+function sendRequestAndWait(service, requestData, timeoutMs = 10000) {
     return new Promise((resolve, reject) => {
-        const subSocket = new net.Socket();
-        let buffer = '';
-        let timeoutId = null;
-
-        const dataListener = (dataChunk) => {
-            buffer += dataChunk.toString('utf8');
-            processBuffer();
-        };
-
-        const errorListener = (err) => cleanup(err);
-        const closeListener = () => {
-            if (timeoutId) cleanup(new Error('Socket de escucha cerrado inesperadamente.'));
-        };
-
-        function processBuffer() {
-            while (buffer.length >= 5) {
-                const header = buffer.substring(0, 5);
-                const expectedLength = parseInt(header, 10);
-                if (isNaN(expectedLength)) return cleanup(new Error(`Buffer corrupto: "${header}"`));
-                if (buffer.length < 5 + expectedLength) return; // Mensaje incompleto, esperar más datos
-
-                const fullPayload = buffer.substring(5, 5 + expectedLength);
-                buffer = buffer.substring(5 + expectedLength);
-                const destinationId = fullPayload.substring(0, 5);
-                
-                if (destinationId === CLIENT_ID) {
-                    try {
-                        cleanup(null, JSON.parse(fullPayload.substring(5)));
-                    } catch (e) {
-                        cleanup(new Error(`Error al parsear JSON: ${e.message}. Recibido: ${fullPayload.substring(5)}`));
-                    }
-                    return; // Terminamos al recibir nuestro mensaje
-                } else {
-                    // Ignorar ecos o mensajes sinit y seguir procesando el buffer
-                }
-            }
-        }
-
-        function cleanup(error = null, value = null) {
-            if (timeoutId) {
-                clearTimeout(timeoutId);
-                timeoutId = null;
-                subSocket.destroy();
-                if (error) reject(error);
-                else resolve(value);
-            }
-        }
-        
-        subSocket.on('data', dataListener);
-        subSocket.on('error', errorListener);
-        subSocket.on('close', closeListener);
-        
-        subSocket.connect({ host: BUS_HOST, port: BUS_PORT }, () => {
-            sendMessage(subSocket, 'sinit', CLIENT_ID);
+        const correlationId = uuidv4();
+        requestData.correlationId = correlationId;
+        requestData.clientId = CLIENT_ID;
+        pendingResponses.set(correlationId, (err, response) => {
+            if (err) return reject(err);
+            resolve(response);
         });
-
-        timeoutId = setTimeout(() => {
-            cleanup(new Error('Timeout: No se recibió respuesta del servicio a tiempo.'));
+        sendMessage(service, JSON.stringify(requestData));
+        setTimeout(() => {
+            if (pendingResponses.has(correlationId)) {
+                pendingResponses.delete(correlationId);
+                reject(new Error(`Timeout esperando respuesta para la operación: ${service}`));
+            }
         }, timeoutMs);
     });
 }
-
-/**
- * Envía una petición única al bus usando un socket de corta duración.
- */
-async function sendRequest(service, payload) {
-    const pubSocket = new net.Socket();
-    await new Promise((resolve, reject) => {
-        pubSocket.connect({ host: BUS_HOST, port: BUS_PORT }, resolve);
-        pubSocket.once('error', reject); // Manejar errores de conexión aquí
-    });
-    sendMessage(pubSocket, service, JSON.stringify(payload));
-    pubSocket.end();
-}
-
 
 // --- Funciones de Flujo de la Aplicación ---
 
@@ -117,27 +106,10 @@ async function handleAuthentication(inquirer, actionType) {
     
     console.log(`\n${promptTitle}`);
     const credentials = await inquirer.prompt([
-        {
-            type: 'input',
-            name: 'correo',
-            message: 'Correo electrónico:',
-            validate: (value) => value.includes('@') ? true : 'Por favor, introduce un correo válido.'
-        },
-        {
-            type: 'password',
-            name: 'password',
-            message: 'Contraseña:',
-            mask: '*'
-            // Se ha eliminado la validación de longitud de la contraseña
-        }
+        { type: 'input', name: 'correo', message: 'Correo electrónico:' },
+        { type: 'password', name: 'password', message: 'Contraseña:' }
     ]);
-    
-    const requestPayload = { ...credentials, clientId: CLIENT_ID };
-    
-    const responsePromise = waitForResponse(10000);
-    await sendRequest(serviceToCall, requestPayload);
-    
-    return responsePromise;
+    return sendRequestAndWait(serviceToCall, credentials);
 }
 
 async function handleAdminTasks(inquirer, adminUser) {
@@ -171,57 +143,32 @@ async function handleAdminTasks(inquirer, adminUser) {
                 break;
         }
         
-        const adminRequestPayload = { clientId: CLIENT_ID, userId: adminUser._id, operation, payload };
         try {
-            const responsePromise = waitForResponse(10000);
-            await sendRequest('admin', adminRequestPayload);
-            const adminResponse = await responsePromise;
-            if (adminResponse.status === 'success') {
-                console.log('\n✅ Operación de Admin exitosa:', JSON.stringify(adminResponse.data, null, 2));
-            } else {
-                console.error(`\n❌ Error del servicio de Admin: ${adminResponse.message}`);
-            }
+            const adminResponse = await sendRequestAndWait('admin', { userId: adminUser._id, operation, payload });
+            console.log('\n✅ Operación de Admin exitosa:', JSON.stringify(adminResponse.data, null, 2));
         } catch (e) {
-            console.error(`\n❌ Error de comunicación con Admin: ${e.message}`);
+            console.error(`\n❌ Error del servicio de Admin: ${e.message}`);
         }
     }
 }
 
 async function handleAsaiChat(inquirer, user) {
     console.log('\n--- Charlando con ASAI (escribe "salir" para terminar) ---');
-    
-    const askAsai = async (query) => {
-        const requestPayload = { clientId: CLIENT_ID, userId: user._id, query };
-        const responsePromise = waitForResponse(10000);
-        await sendRequest('asais', requestPayload);
-        return responsePromise;
-    };
+    while (true) {
+        const { consulta } = await inquirer.prompt([{ type: 'input', name: 'consulta', message: 'Tú:' }]);
+        if (consulta.trim().toLowerCase() === 'salir') break;
 
-    try {
-        const welcomeResponse = await askAsai('');
-        if (welcomeResponse.status === 'success') {
-            console.log(`ASAI: ${welcomeResponse.data.respuesta}`);
-        } else {
-            throw new Error(welcomeResponse.message);
-        }
-
-        while (true) {
-            const { userQuery } = await inquirer.prompt([{ name: 'userQuery', message: `${user.correo}:` }]);
-            const query = userQuery.toLowerCase().trim();
-            if (query === 'salir') {
-                console.log('ASAI: ¡Hasta pronto!');
-                break;
-            }
-
-            const response = await askAsai(query);
+        try {
+            const response = await sendRequestAndWait('asais', { userId: user._id, query: consulta });
             if (response.status === 'success') {
                 console.log(`ASAI: ${response.data.respuesta}`);
             } else {
-                console.error(`ASAI: Hubo un error: ${response.message}`);
+                console.log(`ASAI (error): ${response.message}`);
             }
+        } catch (e) {
+            console.log('❌ Error en la sesión con ASAI:', e.message);
+            break;
         }
-    } catch (e) {
-        console.error(`\n❌ Error en la sesión con ASAI: ${e.message}`);
     }
 }
 
@@ -230,8 +177,16 @@ async function handleAsaiChat(inquirer, user) {
 
 async function run() {
     const inquirer = (await import('inquirer')).default;
-    
+
     try {
+        await new Promise((resolve, reject) => {
+            clientSocket.connect({ host: BUS_HOST, port: BUS_PORT }, resolve);
+            clientSocket.once('error', reject);
+        });
+        console.log(`[Cliente] Conectado al bus. Mi ID es: ${CLIENT_ID}`);
+        sendMessage('sinit', CLIENT_ID);
+        await new Promise(r => setTimeout(r, 100)); // Pequeño delay para asegurar registro
+
         let loggedInUser = null;
         while (!loggedInUser) {
             const { initialAction } = await inquirer.prompt([
@@ -246,13 +201,9 @@ async function run() {
 
             try {
                 const response = await handleAuthentication(inquirer, initialAction === 'Iniciar sesión' ? 'login' : 'register');
-                if (response.status === 'success') {
-                    loggedInUser = response.data;
-                } else {
-                    console.error(`\n❌ Error: ${response.message}\n`);
-                }
+                loggedInUser = response.data;
             } catch (error) {
-                console.error(`\n❌ Error de comunicación: ${error.message}`);
+                console.error(`\n❌ Error de autenticación: ${error.message}`);
                 const { retry } = await inquirer.prompt([{ type: 'confirm', name: 'retry', message: '¿Volver al menú principal?', default: true }]);
                 if (!retry) return;
             }
@@ -278,6 +229,7 @@ async function run() {
     } catch (error) {
         console.error('\n❌ Error crítico en el flujo principal:', error.message);
     } finally {
+        if (!clientSocket.destroyed) clientSocket.destroy();
         console.log('\n[Cliente] Proceso finalizado.');
     }
 }

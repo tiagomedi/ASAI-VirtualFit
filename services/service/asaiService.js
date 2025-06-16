@@ -10,104 +10,130 @@ const BUS_PORT = 5001;
 const ASAI_SERVICE_NAME = 'asais';
 
 /**
- * Función helper para formatear y enviar mensajes al bus.
+ * Helper para enviar respuestas a través del socket del worker.
  */
-function sendMessage(socket, destination, message) {
-    console.log(`[asaiService] Preparando para enviar a destino: '${destination}'`);
-    const payload = destination + message;
-    const header = String(Buffer.byteLength(payload, 'utf8')).padStart(5, '0');
-    socket.write(header + payload);
-    console.log(`[asaiService] Mensaje enviado a '${destination}'.`);
-}
+function sendMessage(socket, destinationId, payload) {
+    const messageJson = JSON.stringify(payload);
+    const finalPayloadString = destinationId + messageJson;
 
+    // 1. Crear un Buffer a partir del payload string. Esto nos da la longitud en bytes REAL.
+    const payloadBuffer = Buffer.from(finalPayloadString, 'utf8');
+    const payloadLength = payloadBuffer.length; // .length en un Buffer es su tamaño en bytes.
+
+    // 2. Crear un Buffer para el header. 5 bytes de longitud.
+    const headerBuffer = Buffer.alloc(5);
+    headerBuffer.write(String(payloadLength).padStart(5, '0'), 'utf8');
+
+    // 3. Concatenar los dos buffers (header + payload) en un único buffer final.
+    const messageBuffer = Buffer.concat([headerBuffer, payloadBuffer]);
+
+    try {
+        // 4. Escribir el buffer completo en una sola operación.
+        // Esto es mucho más fiable que escribir una string concatenada.
+        socket.write(messageBuffer);
+        console.log(`[Service] Respuesta enviada a '${destinationId}'. Header: ${headerBuffer.toString()}, Longitud: ${payloadLength}, Total Bytes: ${messageBuffer.length}`);
+    } catch (error) {
+        console.error(`[Service] Error al escribir en el socket: ${error.message}`);
+    }
+}
 /**
- * La lógica de negocio que interpreta la consulta del usuario.
+ * Lógica de negocio para interpretar la consulta.
  */
 async function interpretarConsulta(query, userId) {
     const q = query.toLowerCase().trim();
     console.log(`[asaiService] Interpretando consulta para el usuario ${userId}: "${q}"`);
 
-    // Tu lógica de palabras clave (ya es correcta)
     if (q.includes('pedido') || q.includes('orden')) {
         const ultimoPedido = await Order.findOne({ user_id: userId }).sort({ createdAt: -1 }).lean();
-        if (!ultimoPedido) return "No tienes pedidos recientes.";
+        if (!ultimoPedido) return "Aún no tienes pedidos en tu historial.";
         return `El estado de tu último pedido es: "${ultimoPedido.estado}".`;
     }
     if (q.includes('buscar')) {
-        // ... tu lógica de búsqueda ...
+        // En un futuro, aquí buscarías en la DB de productos.
         return "He encontrado estos productos para ti: Zapatillas Rojas, Camiseta Azul.";
-    }
-     if (q.includes('ayuda') || q.includes('recomienda') || q.includes('talla')) {
-        return "¡Claro! Puedo ayudarte a encontrar lo que buscas. ¿Qué tipo de prenda o para qué actividad la necesitas? Luego podemos filtrar por talla, color o marca.";
     }
     return "¡Hola! Soy ASAI. ¿En qué puedo ayudarte? Prueba con 'buscar productos' o 'estado de mi pedido'.";
 }
 
 /**
- * Crea el worker que se conecta al bus y maneja el servicio ASAI.
+ * Procesa una petición completa dirigida a este servicio.
  */
-async function createAsaiWorker() {
+async function handleAsaiRequest(socket, messageContent) {
+    let responseClientId = null;
+    let correlationId = null; 
+    try {
+        const requestData = JSON.parse(messageContent);
+        responseClientId = requestData.clientId;
+        correlationId = requestData.correlationId;
+        const { userId, query } = requestData;
+
+        if (!userId || typeof query === 'undefined' || !responseClientId || !correlationId) {
+            throw new Error("Petición a ASAI inválida: falta 'userId', 'query', 'clientId' o 'correlationId'.");
+        }
+
+        const asaiResponseText = await interpretarConsulta(query, userId);
+        
+        const successPayload = { 
+            status: 'success', 
+            correlationId,
+            data: { respuesta: asaiResponseText } 
+        };
+        sendMessage(socket, responseClientId, successPayload);
+
+    } catch (error) {
+        console.error(`[asaiService Handler] Error: ${error.message}`);
+        if (responseClientId && correlationId) {
+            const errorPayload = { 
+                status: 'error', 
+                correlationId,
+                message: error.message 
+            };
+            sendMessage(socket, responseClientId, errorPayload);
+        }
+    }
+}
+
+/**
+ * Crea el worker que se conecta al bus y escucha peticiones.
+ */
+function createAsaiWorker() {
     const workerSocket = new net.Socket();
     let buffer = '';
 
     workerSocket.connect({ host: BUS_HOST, port: BUS_PORT }, () => {
-        console.log(`[Worker ${ASAI_SERVICE_NAME}] Conectado al bus.`);
-        sendMessage(workerSocket, 'sinit', ASAI_SERVICE_NAME);
+        console.log(`[Worker ${ASAI_SERVICE_NAME}] Conectado para recibir peticiones.`);
+        const registerPayload = 'sinit' + ASAI_SERVICE_NAME;
+        const header = String(Buffer.byteLength(registerPayload, 'utf8')).padStart(5, '0');
+        workerSocket.write(header + registerPayload);
     });
 
-    // Usamos 'for await...of' para manejar el stream de forma robusta
-    try {
-        for await (const dataChunk of workerSocket) {
-            buffer += dataChunk.toString('utf8');
-            while (true) {
-                if (buffer.length < 5) break;
-                const length = parseInt(buffer.substring(0, 5), 10);
-                if (isNaN(length) || buffer.length < 5 + length) break;
-                
-                const fullPayload = buffer.substring(5, 5 + length);
-                buffer = buffer.substring(5 + length);
-                
-                const destination = fullPayload.substring(0, 5);
-                const messageContent = fullPayload.substring(5);
+    workerSocket.on('data', (dataChunk) => {
+        buffer += dataChunk.toString('utf8');
+        while (true) {
+            if (buffer.length < 5) break;
+            const length = parseInt(buffer.substring(0, 5), 10);
+            if (isNaN(length) || buffer.length < 5 + length) break;
+            
+            const fullPayload = buffer.substring(5, 5 + length);
+            buffer = buffer.substring(5 + length);
+            const destination = fullPayload.substring(0, 5);
 
-                if (destination !== ASAI_SERVICE_NAME) continue;
-
-                // --- Lógica de procesamiento integrada aquí ---
-                console.log(`[Worker ${ASAI_SERVICE_NAME}] Petición recibida.`);
-                let responseClientId = null;
-                let correlationId = null;
-
-                try {
-                    const requestData = JSON.parse(messageContent);
-                    responseClientId = requestData.clientId;
-                    correlationId = requestData.correlationId; // Opcional
-
-                    // Validamos que los datos esenciales estén presentes
-                    if (!responseClientId || typeof requestData.query === 'undefined') {
-                        throw new Error(`Petición a '${ASAI_SERVICE_NAME}' inválida.`);
-                    }
-                    
-                    const asaiResponseText = await interpretarConsulta(requestData.query, requestData.userId);
-                    
-                    const successPayload = { status: 'success', correlationId, data: { respuesta: asaiResponseText } };
-                    // Usamos el mismo socket que recibió la petición para responder
-                    sendMessage(workerSocket, responseClientId, JSON.stringify(successPayload));
-
-                } catch (error) {
-                    console.error(`[Worker ${ASAI_SERVICE_NAME}] Error: ${error.message}`);
-                    if (responseClientId) {
-                        const errorPayload = { status: 'error', correlationId, message: error.message };
-                        sendMessage(workerSocket, responseClientId, JSON.stringify(errorPayload));
-                    }
-                }
-                // --- Fin de la lógica de procesamiento ---
+            if (destination === ASAI_SERVICE_NAME) {
+                // Pasamos el socket del worker para poder responder por el mismo canal.
+                handleAsaiRequest(workerSocket, fullPayload.substring(5));
             }
         }
-    } catch (err) {
-        console.error(`[Worker ${ASAI_SERVICE_NAME}] Error en el stream: ${err.message}`);
-    }
-    
-    console.log(`[Worker ${ASAI_SERVICE_NAME}] Conexión cerrada.`);
+    });
+
+    workerSocket.on('close', () => {
+        console.log(`[Worker ${ASAI_SERVICE_NAME}] Conexión de escucha cerrada. Reintentando en 5 segundos...`);
+        setTimeout(createAsaiWorker, 5000);
+    });
+
+    workerSocket.on('error', (err) => {
+        console.error(`[Worker ${ASAI_SERVICE_NAME}] Error de socket: ${err.message}`);
+        // La conexión se cerrará y el evento 'close' se encargará de reconectar.
+    });
 }
 
 /**
