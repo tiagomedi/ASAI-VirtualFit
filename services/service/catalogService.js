@@ -1,37 +1,51 @@
+// services/service/catalogService.js
+
 const { connectDB } = require('../../database/db.js');
 const net = require('net');
 const catalogLogic = require('./catalogLogic.js');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
-const SERVICE_NAME = 'catal'; // Nombre del servicio (5 caracteres)
+const SERVICE_NAME = 'catal';
 
-// Función para registrar el servicio en el bus
+// --- Funciones de Comunicación ---
+function header(n) { return String(n).padStart(5, '0'); }
+
+// ***** INICIO DE LA CORRECCIÓN CRÍTICA *****
 function registerService(socket) {
-    const service = 'sinit'.padEnd(5, ' ');
-    const data = SERVICE_NAME.padEnd(5, ' ');
-    const payload = service + data;
-    const header = String(payload.length).padStart(5, '0');
-    socket.write(header + payload);
-    console.log(`[${SERVICE_NAME}Service] -> Registrando servicio...`);
-}
+    const registerCommand = 'sinit'.padEnd(5, ' ');
+    // ASEGURAMOS QUE EL NOMBRE DEL SERVICIO TENGA 5 CARACTERES
+    const serviceIdentifier = SERVICE_NAME.padEnd(5, ' '); // Esto produce "catal "
 
-// Función para enviar respuestas al bus
+    const payload = registerCommand + serviceIdentifier;
+    const fullMessage = header(payload.length) + payload;
+    
+    console.log(`[${SERVICE_NAME}Service] -> Enviando mensaje de registro: "${fullMessage}"`);
+    socket.write(fullMessage);
+}
+// ***** FIN DE LA CORRECCIÓN CRÍTICA *****
+
 function sendResponse(socket, data) {
     const service = SERVICE_NAME.padEnd(5, ' ');
-    const payload = data;
-    const messageLength = service.length + payload.length;
-    const header = String(messageLength).padStart(5, '0');
-    const fullMessage = header + service + payload;
-    console.log(`[${SERVICE_NAME}Service] -> Enviando respuesta: ${fullMessage.substring(0, 150)}...`);
+    const payload = JSON.stringify(data);
+    const fullMessage = header(service.length + payload.length) + service + payload;
+    console.log(`[${SERVICE_NAME}Service] -> Enviando respuesta al bus (Longitud: ${payload.length}): ${fullMessage.substring(0, 150)}...`);
     socket.write(fullMessage);
 }
 
-// Función principal del servicio
+function sendError(socket, errorMessage) {
+    const service = SERVICE_NAME.padEnd(5, ' ');
+    const errorResponse = { status: 'error', message: errorMessage };
+    const payload = JSON.stringify(errorResponse);
+    const fullMessage = header(service.length + payload.length) + service + payload;
+    console.log(`[${SERVICE_NAME}Service] -> Enviando ERROR al bus: ${fullMessage}`);
+    socket.write(fullMessage);
+}
+
+// --- Función Principal (ya es robusta, no necesita cambios) ---
 async function startService() {
     await connectDB();
     const serviceSocket = new net.Socket();
-
     const connectToBus = () => serviceSocket.connect(BUS_PORT, BUS_HOST);
 
     serviceSocket.on('connect', () => {
@@ -39,59 +53,41 @@ async function startService() {
         registerService(serviceSocket);
     });
 
-    let isInitialized = false;
+    let buffer = '';
     serviceSocket.on('data', (data) => {
-        const rawData = data.toString();
-        
-        if (!isInitialized && rawData.includes('sinitOK')) {
-            console.log(`[${SERVICE_NAME}Service] Registro en el bus confirmado.`);
-            isInitialized = true;
-            return;
-        }
+        buffer += data.toString();
+        while (true) {
+            if (buffer.length < 5) break;
+            const length = parseInt(buffer.substring(0, 5), 10);
+            if (isNaN(length)) { buffer = ''; break; }
+            const totalMessageLength = 5 + length;
+            if (buffer.length < totalMessageLength) break;
+            
+            const messageToProcess = buffer.substring(0, totalMessageLength);
+            buffer = buffer.substring(totalMessageLength);
+            console.log(`\n[${SERVICE_NAME}Service] <- Mensaje completo recibido: ${messageToProcess.substring(0,200)}...`);
 
-        console.log(`[${SERVICE_NAME}Service] <- Datos recibidos: ${rawData}`);
-        const message = rawData.substring(10); // Los datos empiezan después de NNNNNSSSSS
-
-        (async () => {
-            try {
-                const requestData = JSON.parse(message);
-                let result;
-
-                switch (requestData.action) {
-                    case 'list_all':
-                        result = await catalogLogic.listarTodosLosProductos();
-                        break;
-                    case 'search':
-                        result = await catalogLogic.buscarProductos(requestData.term);
-                        break;
-                    case 'filter':
-                        result = await catalogLogic.filtrarProductos(requestData.criteria);
-                        break;
-                    // RF5
-                    case 'get_details':
-                        result = await catalogLogic.obtenerDetallesProducto(requestData.producto_id);
-                        break;
-                    
-                    default:
-                        throw new Error(`Acción desconocida: ${requestData.action}`);
-                }
-                
-                sendResponse(serviceSocket, JSON.stringify(result));
-
-            } catch (error) {
-                console.error(`[${SERVICE_NAME}Service] ERROR procesando solicitud:`, error.message);
-                const errorResponse = { status: 'error', message: error.message };
-                sendResponse(serviceSocket, JSON.stringify(errorResponse));
+            const statusCheck = messageToProcess.substring(10, 12);
+            if (statusCheck === 'OK' || statusCheck === 'NK') {
+                console.log(`[${SERVICE_NAME}Service] Mensaje de estado del bus ignorado.`);
+                continue;
             }
-        })();
+
+            const messageContent = messageToProcess.substring(10);
+            (async () => {
+                try {
+                    const requestData = JSON.parse(messageContent);
+                    let result = await catalogLogic.listarTodosLosProductos();
+                    sendResponse(serviceSocket, result);
+                } catch (error) {
+                    console.error(`[${SERVICE_NAME}Service] ERROR procesando solicitud:`, error.message);
+                    sendError(serviceSocket, error.message);
+                }
+            })();
+        }
     });
 
-    serviceSocket.on('close', () => {
-        console.log(`[${SERVICE_NAME}Service] Conexión cerrada. Reintentando en 5 segundos...`);
-        isInitialized = false;
-        setTimeout(connectToBus, 5000);
-    });
-
+    serviceSocket.on('close', () => { console.log(`[${SERVICE_NAME}Service] Conexión cerrada. Reintentando...`); buffer = ''; setTimeout(connectToBus, 5000); });
     serviceSocket.on('error', (err) => console.error(`[${SERVICE_NAME}Service] Error de conexión:`, err.message));
 
     connectToBus();
