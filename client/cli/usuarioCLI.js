@@ -234,4 +234,12 @@ async function run() {
     }
 }
 
+/* HABLAR CON ASAI:
+"buscar zapatillas"
+"mostrar productos nike"
+"tienes algo de color azul"
+"muéstrame poleras adidas"
+"estado de mi pedido"
+*/
+
 run();
