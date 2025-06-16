@@ -1,4 +1,4 @@
-// clients/catalogClient.js
+// clients/cli/catalogClient.js
 const net = require('net');
 const { connectDB, mongoose } = require('../../database/db.js');
 const User = require('../../database/models/user.model.js');
@@ -13,44 +13,59 @@ function sendRequest(serviceName, requestPayload) {
         const clientSocket = new net.Socket();
         
         clientSocket.on('connect', () => {
-            const service = serviceName.padEnd(5, ' ');
+            const service = serviceName.padEnd(5, ' '); // Produce "catal "
             const payload = service + JSON.stringify(requestPayload);
             const header = String(payload.length).padStart(5, '0');
             const fullMessage = header + payload;
             
-            console.log(`\n[Cliente] -> Enviando a '${serviceName}': ${fullMessage.substring(0, 150)}...`);
+            console.log(`\n[Cliente] -> Enviando a '${serviceName}': ${fullMessage}`);
             clientSocket.write(fullMessage);
         });
 
+        let responseBuffer = '';
         clientSocket.on('data', (data) => {
-            const rawData = data.toString();
-            const status = rawData.substring(10, 12).trim();
-            const message = rawData.substring(12);
+            responseBuffer += data.toString();
+            while (true) {
+                if (responseBuffer.length < 5) break;
+                const payloadLength = parseInt(responseBuffer.substring(0, 5), 10);
+                if (isNaN(payloadLength)) { responseBuffer = ''; break; }
+                const totalMessageLength = 5 + payloadLength;
+                if (responseBuffer.length < totalMessageLength) break;
+                
+                const messageToProcess = responseBuffer.substring(0, totalMessageLength);
+                responseBuffer = responseBuffer.substring(totalMessageLength);
+                console.log(`\n[Cliente] <- Respuesta completa recibida: ${messageToProcess.substring(0, 200)}...`);
 
-            if (status === 'OK') {
-                try {
-                    const responseData = JSON.parse(message);
-                    if (responseData.status === 'error' && serviceName !== 'deseo') { // El servicio deseo envia {status, message}
-                        reject(new Error(`Error del servicio '${serviceName}': ${responseData.message}`));
-                    } else {
-                        resolve(responseData);
+                const status = messageToProcess.substring(10, 12).trim();
+                const message = messageToProcess.substring(12);
+
+                if (status === 'OK') {
+                    try {
+                        const responseData = JSON.parse(message);
+                        if (responseData.status === 'error' && serviceName !== 'deseo') {
+                            reject(new Error(`Error del servicio '${serviceName}': ${responseData.message}`));
+                        } else {
+                            resolve(responseData);
+                        }
+                    } catch (e) {
+                        reject(new Error(`Error al parsear la respuesta JSON. Contenido: ${message}`));
                     }
-                } catch (e) {
-                    reject(new Error("Error al parsear la respuesta JSON del servicio."));
+                } else {
+                    reject(new Error(`El bus reportó un error (NK) desde '${serviceName}': ${message}`));
                 }
-            } else {
-                reject(new Error(`El bus reportó un error (NK) desde '${serviceName}': ${message}`));
+                clientSocket.end();
+                return;
             }
-            clientSocket.end();
         });
 
         clientSocket.on('close', () => console.log(`[Cliente] Conexión con ${serviceName} cerrada.`));
         clientSocket.on('error', (err) => reject(new Error(`Error de conexión al bus: ${err.message}`)));
-        
         clientSocket.connect(BUS_PORT, BUS_HOST);
     });
 }
 
+// ... EL RESTO DE TU ARCHIVO catalogClient.js NO NECESITA CAMBIOS ...
+// ... (displayProducts, productActionMenu, etc.)
 function displayProducts(products, title = 'Catálogo de Productos') {
     if (!products || products.length === 0) {
         console.log(`\n-- No se encontraron productos en "${title}". --`);
@@ -81,8 +96,6 @@ function displayProducts(products, title = 'Catálogo de Productos') {
         console.log('----------------------------------------------------');
     });
 }
-
-// --- Lógica Interactiva del Cliente ---
 
 async function productActionMenu(inquirer, displayedProducts, userId) {
     if (!displayedProducts || displayedProducts.length === 0) return;
@@ -169,7 +182,7 @@ async function manageWishlist(inquirer, userId) {
             }
         } catch (error) {
             console.error("\n❌ Error gestionando la lista de deseos:", error.message);
-            goBack = true; // Salir del bucle en caso de error
+            goBack = true;
         }
     }
 }
@@ -212,7 +225,6 @@ async function startClient() {
                 continue;
             }
             
-            // --- Lógica del Catálogo ---
             const { catalogAction } = await inquirer.prompt([{
                 type: 'list', name: 'catalogAction', message: 'Acciones del catálogo:',
                 choices: [
@@ -222,7 +234,6 @@ async function startClient() {
                 ]
             }]);
 
-            let requestPayload;
             let products = [];
             try {
                 switch (catalogAction) {
