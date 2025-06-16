@@ -9,7 +9,7 @@ const pendingResponses = new Map();
 const clientSocket = new net.Socket();
 let buffer = Buffer.alloc(0);
 
-// --- Manejo de buffer y mensajes ---
+
 
 clientSocket.on('data', (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);

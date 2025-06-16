@@ -43,15 +43,63 @@ async function interpretarConsulta(query, userId) {
     const q = query.toLowerCase().trim();
     console.log(`[asaiService] Interpretando consulta para el usuario ${userId}: "${q}"`);
 
+    // 1. Verificación de estado de pedido (lógica existente)
     if (q.includes('pedido') || q.includes('orden')) {
         const ultimoPedido = await Order.findOne({ user_id: userId }).sort({ createdAt: -1 }).lean();
         if (!ultimoPedido) return "Aún no tienes pedidos en tu historial.";
         return `El estado de tu último pedido es: "${ultimoPedido.estado}".`;
     }
-    if (q.includes('buscar')) {
-        // En un futuro, aquí buscarías en la DB de productos.
-        return "He encontrado estos productos para ti: Zapatillas Rojas, Camiseta Azul.";
+
+    // 2. NUEVA LÓGICA: Verificación de búsqueda de productos
+    if (q.includes('buscar') || q.includes('mostrar') || q.includes('tienes') || q.includes('producto')) {
+        
+        // Objeto de consulta dinámico para Mongoose
+        const queryObject = {};
+        
+        // Dividimos la consulta en palabras para analizarlas
+        const palabras = q.replace(/,/g, ' ').split(' ').filter(p => p.length > 2);
+
+        // Términos comunes de productos y marcas (puedes expandir esto)
+        const tiposProducto = ['zapatilla', 'polera', 'pantalón', 'chaqueta', 'short'];
+        const marcasConocidas = ['nike', 'adidas', 'puma', 'reebok', 'jordan'];
+        const coloresConocidos = ['rojo', 'azul', 'negro', 'blanco', 'verde', 'amarillo', 'gris'];
+
+        palabras.forEach(palabra => {
+            // Buscar por tipo de producto
+            if (tiposProducto.some(tipo => palabra.includes(tipo))) {
+                queryObject.nombre = new RegExp(palabra, 'i');
+            }
+            // Buscar por marca
+            if (marcasConocidas.includes(palabra)) {
+                queryObject.marca = new RegExp(palabra, 'i');
+            }
+            // Buscar por color en las variaciones
+            if (coloresConocidos.includes(palabra)) {
+                queryObject['variaciones.color'] = new RegExp(palabra, 'i');
+            }
+        });
+
+        // Si no se construyó ninguna consulta, es una pregunta genérica
+        if (Object.keys(queryObject).length === 0) {
+            return "Puedo buscar productos por tipo (zapatilla, polera), marca o color. ¿Qué te gustaría encontrar?";
+        }
+
+        console.log('[asaiService] Ejecutando búsqueda con el objeto:', queryObject);
+        const productos = await Product.find(queryObject).limit(5).lean(); // Limitamos a 5 para no saturar
+
+        if (productos.length === 0) {
+            return "Lo siento, no encontré productos que coincidan con tu búsqueda. Intenta con otros términos.";
+        }
+
+        // Formateamos una respuesta amigable
+        let respuesta = `¡Claro! Encontré esto para ti:\n`;
+        productos.forEach(p => {
+            respuesta += `  - ${p.nombre} marca ${p.marca}\n`;
+        });
+        return respuesta;
     }
+
+    // 3. Respuesta por defecto (lógica existente)
     return "¡Hola! Soy ASAI. ¿En qué puedo ayudarte? Prueba con 'buscar productos' o 'estado de mi pedido'.";
 }
 
