@@ -23,9 +23,7 @@ async function crearUsuario(correo, passwordPlano) {
     console.log('[userService] El usuario no existe, procediendo.');
 
     // 2. Hashear la contraseña
-    if (!passwordPlano || passwordPlano.length < 6) {
-        throw new Error('La contraseña es inválida o demasiado corta.');
-    }
+    
     const hash_password = await bcrypt.hash(passwordPlano, SALT_ROUNDS);
     console.log('[userService] Contraseña hasheada.');
 

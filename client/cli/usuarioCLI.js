@@ -5,7 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
-// Se genera un nuevo ID para CADA ejecución del script.
+// Usamos CLIENT_ID como el nombre oficial para el ID de esta instancia.
 const CLIENT_ID = uuidv4().substring(0, 5);
 
 // --- Funciones Helper de Sockets ---
@@ -117,8 +117,19 @@ async function handleAuthentication(inquirer, actionType) {
     
     console.log(`\n${promptTitle}`);
     const credentials = await inquirer.prompt([
-        { type: 'input', name: 'correo', message: 'Correo electrónico:' },
-        { type: 'password', name: 'password', message: 'Contraseña:' }
+        {
+            type: 'input',
+            name: 'correo',
+            message: 'Correo electrónico:',
+            validate: (value) => value.includes('@') ? true : 'Por favor, introduce un correo válido.'
+        },
+        {
+            type: 'password',
+            name: 'password',
+            message: 'Contraseña:',
+            mask: '*'
+            // Se ha eliminado la validación de longitud de la contraseña
+        }
     ]);
     
     const requestPayload = { ...credentials, clientId: CLIENT_ID };
