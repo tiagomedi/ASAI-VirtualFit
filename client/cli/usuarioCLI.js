@@ -6,7 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
 // Se genera un nuevo ID para CADA ejecución del script.
-const SCRIPT_INSTANCE_ID = uuidv4().substring(0, 5);
+const CLIENT_ID = uuidv4().substring(0, 5);
 
 // --- Funciones Helper de Sockets ---
 
@@ -51,19 +51,21 @@ function waitForResponse(timeoutMs = 10000) {
                 const header = buffer.substring(0, 5);
                 const expectedLength = parseInt(header, 10);
                 if (isNaN(expectedLength)) return cleanup(new Error(`Buffer corrupto: "${header}"`));
-                if (buffer.length < 5 + expectedLength) return;
+                if (buffer.length < 5 + expectedLength) return; // Mensaje incompleto, esperar más datos
 
                 const fullPayload = buffer.substring(5, 5 + expectedLength);
                 buffer = buffer.substring(5 + expectedLength);
                 const destinationId = fullPayload.substring(0, 5);
                 
-                if (destinationId === SCRIPT_INSTANCE_ID) {
+                if (destinationId === CLIENT_ID) {
                     try {
                         cleanup(null, JSON.parse(fullPayload.substring(5)));
                     } catch (e) {
                         cleanup(new Error(`Error al parsear JSON: ${e.message}. Recibido: ${fullPayload.substring(5)}`));
                     }
-                    return; // Terminamos
+                    return; // Terminamos al recibir nuestro mensaje
+                } else {
+                    // Ignorar ecos o mensajes sinit y seguir procesando el buffer
                 }
             }
         }
@@ -83,7 +85,7 @@ function waitForResponse(timeoutMs = 10000) {
         subSocket.on('close', closeListener);
         
         subSocket.connect({ host: BUS_HOST, port: BUS_PORT }, () => {
-            sendMessage(subSocket, 'sinit', SCRIPT_INSTANCE_ID);
+            sendMessage(subSocket, 'sinit', CLIENT_ID);
         });
 
         timeoutId = setTimeout(() => {
@@ -97,7 +99,6 @@ function waitForResponse(timeoutMs = 10000) {
  */
 async function sendRequest(service, payload) {
     const pubSocket = new net.Socket();
-    // Envolvemos la conexión en una promesa para asegurar que se complete
     await new Promise((resolve, reject) => {
         pubSocket.connect({ host: BUS_HOST, port: BUS_PORT }, resolve);
         pubSocket.once('error', reject); // Manejar errores de conexión aquí
@@ -120,7 +121,7 @@ async function handleAuthentication(inquirer, actionType) {
         { type: 'password', name: 'password', message: 'Contraseña:' }
     ]);
     
-    const requestPayload = { ...credentials, clientId: SCRIPT_INSTANCE_ID };
+    const requestPayload = { ...credentials, clientId: CLIENT_ID };
     
     const responsePromise = waitForResponse(10000);
     await sendRequest(serviceToCall, requestPayload);
@@ -159,7 +160,7 @@ async function handleAdminTasks(inquirer, adminUser) {
                 break;
         }
         
-        const adminRequestPayload = { clientId: SCRIPT_INSTANCE_ID, userId: adminUser._id, operation, payload };
+        const adminRequestPayload = { clientId: CLIENT_ID, userId: adminUser._id, operation, payload };
         try {
             const responsePromise = waitForResponse(10000);
             await sendRequest('admin', adminRequestPayload);
@@ -178,16 +179,14 @@ async function handleAdminTasks(inquirer, adminUser) {
 async function handleAsaiChat(inquirer, user) {
     console.log('\n--- Charlando con ASAI (escribe "salir" para terminar) ---');
     
-    // Función interna que sigue el patrón de un solo uso para CADA pregunta
     const askAsai = async (query) => {
-        const requestPayload = { clientId: SCRIPT_INSTANCE_ID, userId: user._id, query };
+        const requestPayload = { clientId: CLIENT_ID, userId: user._id, query };
         const responsePromise = waitForResponse(10000);
         await sendRequest('asais', requestPayload);
         return responsePromise;
     };
 
     try {
-        // Saludo inicial
         const welcomeResponse = await askAsai('');
         if (welcomeResponse.status === 'success') {
             console.log(`ASAI: ${welcomeResponse.data.respuesta}`);
@@ -195,7 +194,6 @@ async function handleAsaiChat(inquirer, user) {
             throw new Error(welcomeResponse.message);
         }
 
-        // Bucle de conversación
         while (true) {
             const { userQuery } = await inquirer.prompt([{ name: 'userQuery', message: `${user.correo}:` }]);
             const query = userQuery.toLowerCase().trim();
