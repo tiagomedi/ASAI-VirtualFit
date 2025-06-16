@@ -8,28 +8,23 @@ const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
 const SERVICE_NAME = 'catal';
 
-// --- Funciones de Comunicación ---
+// --- Funciones de Comunicación (sin cambios, ya son robustas) ---
 function header(n) { return String(n).padStart(5, '0'); }
 
-// ***** INICIO DE LA CORRECCIÓN CRÍTICA *****
 function registerService(socket) {
     const registerCommand = 'sinit'.padEnd(5, ' ');
-    // ASEGURAMOS QUE EL NOMBRE DEL SERVICIO TENGA 5 CARACTERES
-    const serviceIdentifier = SERVICE_NAME.padEnd(5, ' '); // Esto produce "catal "
-
+    const serviceIdentifier = SERVICE_NAME.padEnd(5, ' ');
     const payload = registerCommand + serviceIdentifier;
     const fullMessage = header(payload.length) + payload;
-    
     console.log(`[${SERVICE_NAME}Service] -> Enviando mensaje de registro: "${fullMessage}"`);
     socket.write(fullMessage);
 }
-// ***** FIN DE LA CORRECCIÓN CRÍTICA *****
 
 function sendResponse(socket, data) {
     const service = SERVICE_NAME.padEnd(5, ' ');
     const payload = JSON.stringify(data);
     const fullMessage = header(service.length + payload.length) + service + payload;
-    console.log(`[${SERVICE_NAME}Service] -> Enviando respuesta al bus (Longitud: ${payload.length}): ${fullMessage.substring(0, 150)}...`);
+    console.log(`[${SERVICE_NAME}Service] -> Enviando respuesta (Longitud: ${payload.length}): ${fullMessage.substring(0, 150)}...`);
     socket.write(fullMessage);
 }
 
@@ -42,7 +37,8 @@ function sendError(socket, errorMessage) {
     socket.write(fullMessage);
 }
 
-// --- Función Principal (ya es robusta, no necesita cambios) ---
+
+// --- Función Principal del Servicio ---
 async function startService() {
     await connectDB();
     const serviceSocket = new net.Socket();
@@ -76,9 +72,35 @@ async function startService() {
             const messageContent = messageToProcess.substring(10);
             (async () => {
                 try {
-                    const requestData = JSON.parse(messageContent);
-                    let result = await catalogLogic.listarTodosLosProductos();
+                    const req = JSON.parse(messageContent);
+                    let result;
+
+                    // ***** INICIO DE LA CORRECCIÓN CRÍTICA *****
+                    // El switch debe manejar todas las acciones definidas en catalogLogic.
+                    switch (req.action) {
+                        case 'list_all':
+                            console.log("--- [catalogService] Enrutando a 'listarTodosLosProductos' ---");
+                            result = await catalogLogic.listarTodosLosProductos();
+                            break;
+                        case 'search':
+                             console.log("--- [catalogService] Enrutando a 'buscarProductos' ---");
+                            result = await catalogLogic.buscarProductos(req.term);
+                            break;
+                        case 'filter':
+                             console.log("--- [catalogService] Enrutando a 'filtrarProductos' ---");
+                            result = await catalogLogic.filtrarProductos(req.criteria);
+                            break;
+                        case 'get_details': // ¡Esta era la acción que faltaba!
+                             console.log("--- [catalogService] Enrutando a 'obtenerDetallesProducto' ---");
+                            result = await catalogLogic.obtenerDetallesProducto(req.producto_id);
+                            break;
+                        default:
+                            throw new Error(`Acción desconocida en catalogService: ${req.action}`);
+                    }
+                    // ***** FIN DE LA CORRECCIÓN CRÍTICA *****
+                    
                     sendResponse(serviceSocket, result);
+
                 } catch (error) {
                     console.error(`[${SERVICE_NAME}Service] ERROR procesando solicitud:`, error.message);
                     sendError(serviceSocket, error.message);
