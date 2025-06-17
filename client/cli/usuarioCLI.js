@@ -65,7 +65,7 @@ function handleMessage(fullPayload) {
             handler(null, response);
         }
     } catch (e) {
-        // Manejo de error de parseo
+        console.error(`[Cliente] Error al procesar mensaje: ${e.message}`);
     }
 }
 
@@ -141,7 +141,6 @@ async function handleAdminTasks(inquirer, adminUser) {
                     { name: 'color', message: 'Nuevo color (deja vacío para no cambiar):' },
                     { name: 'precio', message: 'Nuevo precio (deja vacío para no cambiar):', type: 'number' },
                     { name: 'stock', message: 'Nuevo stock (deja vacío para no cambiar):', type: 'number' }
-                    // Agrega más campos si lo deseas
                 ]);
                 // Elimina campos vacíos
                 Object.keys(updates).forEach(k => { if (!updates[k]) delete updates[k]; });
