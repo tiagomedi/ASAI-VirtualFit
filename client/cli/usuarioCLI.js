@@ -65,7 +65,7 @@ function handleMessage(fullPayload) {
             handler(null, response);
         }
     } catch (e) {
-        // Manejo de error de parseo
+        console.error(`[Cliente] Error al procesar mensaje: ${e.message}`);
     }
 }
 
@@ -133,8 +133,18 @@ async function handleAdminTasks(inquirer, adminUser) {
             case 'Editar Producto':
                 operation = 'editarProducto';
                 const { productoId: editId } = await inquirer.prompt([{ name: 'productoId', message: 'ID del producto a editar:' }]);
-                const { nuevoNombre } = await inquirer.prompt([{ name: 'nuevoNombre', message: 'Nuevo nombre:' }]);
-                payload = { productoId: editId, updates: { nombre: nuevoNombre } };
+                // Puedes pedir más campos aquí:
+                const updates = await inquirer.prompt([
+                    { name: 'nombre', message: 'Nuevo nombre (deja vacío para no cambiar):' },
+                    { name: 'marca', message: 'Nueva marca (deja vacío para no cambiar):' },
+                    { name: 'talla', message: 'Nueva talla (deja vacío para no cambiar):' },
+                    { name: 'color', message: 'Nuevo color (deja vacío para no cambiar):' },
+                    { name: 'precio', message: 'Nuevo precio (deja vacío para no cambiar):', type: 'number' },
+                    { name: 'stock', message: 'Nuevo stock (deja vacío para no cambiar):', type: 'number' }
+                ]);
+                // Elimina campos vacíos
+                Object.keys(updates).forEach(k => { if (!updates[k]) delete updates[k]; });
+                payload = { productoId: editId, updates };
                 break;
             case 'Eliminar Producto':
                 operation = 'eliminarProducto';
@@ -238,8 +248,8 @@ async function run() {
 
 /* HABLAR CON ASAI:
 "buscar zapatillas"
-"mostrar productos nike"
-"tienes algo de color azul"
+"buscar productos nike"
+"buscar polera azul"
 "muéstrame poleras adidas"
 "estado de mi pedido"
 */

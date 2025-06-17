@@ -3,6 +3,7 @@
 const { connectDB } = require('../../database/db.js');
 const net = require('net');
 const User = require('../../database/models/user.model');
+const Product = require('../../database/models/product.model'); // Asegúrate de importar el modelo
 const productService = require('./productLogic.js');
 
 const BUS_HOST = 'localhost';
@@ -25,8 +26,6 @@ async function createAdminWorker() {
     const workerSocket = new net.Socket();
     let buffer = '';
 
-    // --- CORRECCIÓN CLAVE ---
-    // Usamos un objeto de opciones para una conexión inequívoca.
     const connectionOptions = {
         host: BUS_HOST,
         port: BUS_PORT
@@ -50,7 +49,7 @@ async function createAdminWorker() {
             const destination = fullPayload.substring(0, 5);
             if (destination !== ADMIN_SERVICE_NAME) continue;
 
-            // La llamada a handleAdminRequest ya es correcta
+
             await handleAdminRequest(workerSocket, fullPayload.substring(5));
         }
     });
@@ -61,14 +60,13 @@ async function createAdminWorker() {
 
 async function handleAdminRequest(socket, messageContent) {
     let responseClientId = null;
-    let correlationId = null; // Lo declaramos
+    let correlationId = null;
     try {
         const requestData = JSON.parse(messageContent);
         responseClientId = requestData.clientId;
-        correlationId = requestData.correlationId; // Capturamos si viene
+        correlationId = requestData.correlationId;
         const { userId, operation, payload } = requestData;
 
-        // --- VALIDACIÓN CORREGIDA ---
         if (!responseClientId || !userId || !operation || !payload) {
             throw new Error('Petición de admin inválida.');
         }
@@ -76,13 +74,21 @@ async function handleAdminRequest(socket, messageContent) {
         await verificarAdmin(userId);
 
         let result;
-        // ... (el switch case es correcto)
-        
+
+        if (operation === 'editarProducto') {
+            // payload: { productoId, updates }
+            const { productoId, updates } = payload;
+            if (!productoId || !updates) throw new Error('Faltan datos para editar el producto.');
+            const updated = await Product.findByIdAndUpdate(productoId, updates, { new: true });
+            if (!updated) throw new Error('Producto no encontrado.');
+            result = updated;
+        }
+        // ...agrega aquí el resto de operaciones (crear, eliminar, etc.)...
+
         const successPayload = { status: 'success', correlationId, data: result };
         sendMessage(socket, responseClientId, JSON.stringify(successPayload));
 
     } catch (error) {
-        // ...
         if (responseClientId) {
             const errorPayload = { status: 'error', correlationId, message: error.message };
             sendMessage(socket, responseClientId, JSON.stringify(errorPayload));
@@ -91,7 +97,7 @@ async function handleAdminRequest(socket, messageContent) {
 }
 
 function sendMessage(socket, destination, message) {
-    // ... (esta función ya es correcta y no necesita cambios)
+
     const payload = destination + message;
     const header = String(Buffer.byteLength(payload, 'utf8')).padStart(5, '0');
     socket.write(header + payload);
