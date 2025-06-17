@@ -1,0 +1,631 @@
+[
+  {
+    "nombre": "Zapatillas de Running 'Velocity Boost'",
+    "marca": "Nike",
+    "categoria": "Calzado",
+    "descripcion": "Diseñadas para corredores exigentes, las Velocity Boost ofrecen una amortiguación reactiva y una sujeción ligera para maximizar tu rendimiento.",
+    "tags": ["running", "amortiguación", "ligeras", "entrenamiento"],
+    "variaciones": [
+      {
+        "talla": "41",
+        "color": "Negro/Blanco",
+        "precio": 99990,
+        "stock": 25,
+        "sku": "NKE-VELBST-41-NBL"
+      },
+      {
+        "talla": "42",
+        "color": "Negro/Blanco",
+        "precio": 99990,
+        "stock": 30,
+        "sku": "NKE-VELBST-42-NBL"
+      },
+      {
+        "talla": "42",
+        "color": "Azul Eléctrico",
+        "precio": 104990,
+        "stock": 15,
+        "sku": "NKE-VELBST-42-AZL"
+      }
+    ],
+    "reseñas": [
+      {
+        "user_id": "684b875e177180bd9c8a26a8",
+        "nombre_usuario_snapshot": "Ana G.",
+        "puntuacion": 5,
+        "comentario": "¡Las mejores zapatillas que he tenido! Súper cómodas y livianas."
+      },
+      {
+        "user_id": "684f6ffff92b70c1d539fd81",
+        "nombre_usuario_snapshot": "Elena P.",
+        "puntuacion": 4,
+        "comentario": "Muy buenas, aunque tardaron un poco en adaptarse a mi pie. Ahora son perfectas."
+      }
+    ]
+  },
+  {
+    "nombre": "Polera Técnica 'Dry-Fit Performance'",
+    "marca": "Adidas",
+    "categoria": "Ropa Superior",
+    "descripcion": "Polera de entrenamiento con tejido transpirable que expulsa el sudor para mantenerte seco y cómodo durante tus rutinas más intensas.",
+    "tags": ["gym", "entrenamiento", "transpirable", "dry-fit"],
+    "variaciones": [
+      {
+        "talla": "M",
+        "color": "Gris Jaspeado",
+        "precio": 29990,
+        "stock": 50,
+        "sku": "ADS-DRYFIT-M-GRS"
+      },
+      {
+        "talla": "L",
+        "color": "Gris Jaspeado",
+        "precio": 29990,
+        "stock": 45,
+        "sku": "ADS-DRYFIT-L-GRS"
+      },
+      {
+        "talla": "M",
+        "color": "Rojo",
+        "precio": 29990,
+        "stock": 33,
+        "sku": "ADS-DRYFIT-M-ROJ"
+      }
+    ],
+    "reseñas": [
+       {
+        "user_id": "684b8da3254cdefa9288c068",
+        "nombre_usuario_snapshot": "Pedro S.",
+        "puntuacion": 5,
+        "comentario": "La tela es de excelente calidad, muy fresca para entrenar."
+      }
+    ]
+  },
+  {
+    "nombre": "Shorts Deportivos 'Flex-Fit'",
+    "marca": "Under Armour",
+    "categoria": "Ropa Inferior",
+    "descripcion": "Shorts ligeros y elásticos que te dan total libertad de movimiento. Ideales para crossfit, running o cualquier actividad física.",
+    "tags": ["shorts", "crossfit", "running", "ligero"],
+    "variaciones": [
+      {
+        "talla": "S",
+        "color": "Negro",
+        "precio": 34990,
+        "stock": 20,
+        "sku": "UA-FLEXFIT-S-NEG"
+      },
+      {
+        "talla": "M",
+        "color": "Negro",
+        "precio": 34990,
+        "stock": 30,
+        "sku": "UA-FLEXFIT-M-NEG"
+      }
+    ],
+    "reseñas": []
+  },
+  {
+    "nombre": "Buzo Completo 'Tech Fleece'",
+    "marca": "Puma",
+    "categoria": "Conjuntos",
+    "descripcion": "Conjunto de polerón y pantalón de buzo fabricado en tela fleece técnica, que aporta calidez sin añadir peso. Perfecto para el día a día o para calentar antes de entrenar.",
+    "tags": ["buzo", "conjunto", "fleece", "casual"],
+    "variaciones": [
+      {
+        "talla": "L",
+        "color": "Verde Oliva",
+        "precio": 79990,
+        "stock": 18,
+        "sku": "PMA-TECHFL-L-VOL"
+      },
+      {
+        "talla": "XL",
+        "color": "Verde Oliva",
+        "precio": 79990,
+        "stock": 12,
+        "sku": "PMA-TECHFL-XL-VOL"
+      }
+    ],
+    "reseñas": [
+      {
+        "user_id": "6848e49fc5613951bb815770",
+        "nombre_usuario_snapshot": "Carlos R.",
+        "puntuacion": 5,
+        "comentario": "Muy abrigador y con mucho estilo. La calidad es A1."
+      },
+      {
+        "user_id": "684b8bcb616b95077667f37b",
+        "nombre_usuario_snapshot": "Luisa M.",
+        "puntuacion": 5,
+        "comentario": "¡Me encantó! El color es igual al de la foto y es súper cómodo."
+      }
+    ]
+  },
+  {
+    "nombre": "Jockey 'AeroBill Classic'",
+    "marca": "Nike",
+    "categoria": "Accesorios",
+    "descripcion": "Jockey clásico con tecnología AeroBill que combina ligereza y transpirabilidad. Cierre ajustable para un calce perfecto.",
+    "tags": ["jockey", "gorro", "running", "proteccion solar"],
+    "variaciones": [
+      {
+        "talla": "Única",
+        "color": "Blanco",
+        "precio": 19990,
+        "stock": 60,
+        "sku": "NKE-AEROBILL-U-BLA"
+      },
+      {
+        "talla": "Única",
+        "color": "Negro",
+        "precio": 19990,
+        "stock": 80,
+        "sku": "NKE-AEROBILL-U-NEG"
+      }
+    ],
+    "reseñas": [
+       {
+        "user_id": "684c92532eee5ddc7bfd39ae",
+        "nombre_usuario_snapshot": "Sofia V.",
+        "puntuacion": 5,
+        "comentario": "Simple, bonito y cumple su función. Lo uso para correr todos los días."
+      }
+    ]
+  },
+  {
+    "nombre": "Calcetines de Compresión (Pack 3)",
+    "marca": "Reebok",
+    "categoria": "Accesorios",
+    "descripcion": "Pack de 3 pares de calcetines de compresión media, ideales para mejorar la circulación durante y después del ejercicio. Reducen la fatiga muscular.",
+    "tags": ["calcetines", "compresion", "recuperacion", "running"],
+    "variaciones": [
+      {
+        "talla": "39-42",
+        "color": "Surtido (Negro, Blanco, Gris)",
+        "precio": 14990,
+        "stock": 110,
+        "sku": "RBK-COMP3-3942-SUR"
+      },
+      {
+        "talla": "43-46",
+        "color": "Surtido (Negro, Blanco, Gris)",
+        "precio": 14990,
+        "stock": 90,
+        "sku": "RBK-COMP3-4346-SUR"
+      }
+    ],
+    "reseñas": []
+  },
+  {
+    "nombre": "Leggings de Entrenamiento 'Hyper-Luxe'",
+    "marca": "Lululemon",
+    "categoria": "Ropa Inferior",
+    "descripcion": "Calzas de cintura alta con un tejido ultra suave y de gran sujeción. No se transparentan y se mantienen en su sitio sin importar el movimiento.",
+    "tags": ["leggings", "calzas", "yoga", "gym", "cintura alta"],
+    "variaciones": [
+      {
+        "talla": "S",
+        "color": "Azul Marino",
+        "precio": 89990,
+        "stock": 22,
+        "sku": "LULU-HYPLX-S-AZM"
+      },
+      {
+        "talla": "M",
+        "color": "Azul Marino",
+        "precio": 89990,
+        "stock": 25,
+        "sku": "LULU-HYPLX-M-AZM"
+      },
+      {
+        "talla": "M",
+        "color": "Burdeo",
+        "precio": 92990,
+        "stock": 15,
+        "sku": "LULU-HYPLX-M-BUR"
+      }
+    ],
+    "reseñas": [
+      {
+        "user_id": "684b8bcb616b95077667f37b",
+        "nombre_usuario_snapshot": "Luisa M.",
+        "puntuacion": 5,
+        "comentario": "Valen cada peso. Son las calzas más cómodas que he probado. La calidad es increíble."
+      },
+      {
+        "user_id": "684c92532eee5ddc7bfd39ae",
+        "nombre_usuario_snapshot": "Sofia V.",
+        "puntuacion": 5,
+        "comentario": "Perfectas para yoga, no se bajan y la tela es maravillosa."
+      }
+    ]
+  },
+  {
+    "nombre": "Botella de Agua 'HydraFlow' 1L",
+    "marca": "Hydro Flask",
+    "categoria": "Accesorios",
+    "descripcion": "Botella de acero inoxidable con aislamiento al vacío de doble pared. Mantiene tus bebidas frías por 24 horas o calientes por 12 horas.",
+    "tags": ["botella", "hidratacion", "acero inoxidable", "gym"],
+    "variaciones": [
+      {
+        "talla": "1 Litro",
+        "color": "Cobalto",
+        "precio": 39990,
+        "stock": 40,
+        "sku": "HFLSK-HYDFLW-1L-COB"
+      },
+      {
+        "talla": "1 Litro",
+        "color": "Negro",
+        "precio": 39990,
+        "stock": 55,
+        "sku": "HFLSK-HYDFLW-1L-NEG"
+      }
+    ],
+    "reseñas": [
+      {
+        "user_id": "684cc4d8a701191806ce0030",
+        "nombre_usuario_snapshot": "Martin L.",
+        "puntuacion": 5,
+        "comentario": "Mantiene el agua helada todo el día, incluso si dejo la botella en el auto. Imprescindible."
+      }
+    ]
+  },
+  {
+    "nombre": "Zapatillas de Trail Running 'Terrex Agravic'",
+    "marca": "Adidas",
+    "categoria": "Calzado",
+    "descripcion": "Conquista la montaña con estas zapatillas de trail. Suela de caucho Continental™ para un agarre excepcional en terrenos secos y mojados.",
+    "tags": ["trail running", "montaña", "outdoor", "agarre"],
+    "variaciones": [
+      {
+        "talla": "42.5",
+        "color": "Naranjo/Negro",
+        "precio": 119990,
+        "stock": 15,
+        "sku": "ADS-TRXAGR-425-NAR"
+      },
+      {
+        "talla": "43",
+        "color": "Naranjo/Negro",
+        "precio": 119990,
+        "stock": 18,
+        "sku": "ADS-TRXAGR-43-NAR"
+      }
+    ],
+    "reseñas": [
+       {
+        "user_id": "684f6ffff92b70c1d539fd81",
+        "nombre_usuario_snapshot": "Elena P.",
+        "puntuacion": 5,
+        "commentario": "El agarre es espectacular, me dan mucha seguridad en las bajadas."
+      }
+    ]
+  },
+  {
+    "nombre": "Polerón con Capucha 'Rival Fleece'",
+    "marca": "Under Armour",
+    "categoria": "Ropa Superior",
+    "descripcion": "Polerón de polar ultra suave y de peso medio, con interior cepillado para mayor calidez. Ideal para usar sobre tu ropa de entrenamiento.",
+    "tags": ["poleron", "hoodie", "fleece", "abrigo"],
+    "variaciones": [
+      {
+        "talla": "M",
+        "color": "Gris Claro",
+        "precio": 44990,
+        "stock": 40,
+        "sku": "UA-RIVALFL-M-GRC"
+      },
+      {
+        "talla": "L",
+        "color": "Gris Claro",
+        "precio": 44990,
+        "stock": 35,
+        "sku": "UA-RIVALFL-L-GRC"
+      },
+      {
+        "talla": "L",
+        "color": "Azul",
+        "precio": 44990,
+        "stock": 30,
+        "sku": "UA-RIVALFL-L-AZL"
+      }
+    ],
+    "reseñas": []
+  },
+  {
+    "nombre": "Mochila Deportiva 'Brasilia'",
+    "marca": "Nike",
+    "categoria": "Accesorios",
+    "descripcion": "Mochila versátil con múltiples compartimentos, incluyendo uno ventilado para ropa o calzado húmedo. Perfecta para el gimnasio o viajes cortos.",
+    "tags": ["mochila", "gym", "viaje", "almacenamiento"],
+    "variaciones": [
+      {
+        "talla": "Mediana",
+        "color": "Negro",
+        "precio": 34990,
+        "stock": 70,
+        "sku": "NKE-BRASILIA-M-NEG"
+      }
+    ],
+    "reseñas": [
+      {
+        "user_id": "684b8da3254cdefa9288c068",
+        "nombre_usuario_snapshot": "Pedro S.",
+        "puntuacion": 4,
+        "comentario": "Es espaciosa y práctica. Me gustaría que tuviera más bolsillos pequeños, pero en general es muy buena."
+      },
+      {
+        "user_id": "6848e49fc5613951bb815770",
+        "nombre_usuario_snapshot": "Carlos R.",
+        "puntuacion": 5,
+        "comentario": "Excelente mochila, cabe todo lo del gimnasio y más. Muy resistente."
+      }
+    ]
+  },
+  {
+    "nombre": "Balón de Fútbol 'Strike Pro'",
+    "marca": "Nike",
+    "categoria": "Equipamiento",
+    "descripcion": "Balón de fútbol tamaño 5 con ranuras Aerowtrac para un vuelo más preciso. Carcasa texturizada para un mejor toque y control.",
+    "tags": ["futbol", "balon", "pelota", "entrenamiento"],
+    "variaciones": [
+      {
+        "talla": "5",
+        "color": "Blanco/Rojo",
+        "precio": 24990,
+        "stock": 150,
+        "sku": "NKE-STRIKEPRO-5-BLR"
+      }
+    ],
+    "reseñas": [
+       {
+        "user_id": "684cc4d8a701191806ce0030",
+        "nombre_usuario_snapshot": "Martin L.",
+        "puntuacion": 5,
+        "comentario": "Buen balón para pichanguear con los amigos. Tiene buen peso y se siente bien al pegarle."
+      }
+    ]
+  },
+  {
+    "nombre": "Cortaviento 'Run It'",
+    "marca": "Adidas",
+    "categoria": "Ropa Superior",
+    "descripcion": "Chaqueta cortaviento ultraligera con acabado que repele el agua. Ideal para correr en días de viento o llovizna.",
+    "tags": ["cortaviento", "running", "repelente al agua", "chaqueta"],
+    "variaciones": [
+      {
+        "talla": "M",
+        "color": "Amarillo Flúor",
+        "precio": 54990,
+        "stock": 25,
+        "sku": "ADS-RUNIT-M-AMF"
+      },
+      {
+        "talla": "L",
+        "color": "Amarillo Flúor",
+        "precio": 54990,
+        "stock": 20,
+        "sku": "ADS-RUNIT-L-AMF"
+      }
+    ],
+    "reseñas": []
+  },
+  {
+    "nombre": "Guantes de Entrenamiento 'Essential'",
+    "marca": "Puma",
+    "categoria": "Accesorios",
+    "descripcion": "Guantes acolchados para levantamiento de pesas que protegen tus manos y mejoran el agarre. Cierre de velcro para un ajuste seguro.",
+    "tags": ["guantes", "gym", "pesas", "proteccion"],
+    "variaciones": [
+      {
+        "talla": "M",
+        "color": "Negro/Blanco",
+        "precio": 17990,
+        "stock": 65,
+        "sku": "PMA-GUANTE-M-NBL"
+      },
+      {
+        "talla": "L",
+        "color": "Negro/Blanco",
+        "precio": 17990,
+        "stock": 55,
+        "sku": "PMA-GUANTE-L-NBL"
+      }
+    ],
+    "reseñas": [
+      {
+        "user_id": "684b8da3254cdefa9288c068",
+        "nombre_usuario_snapshot": "Pedro S.",
+        "puntuacion": 4,
+        "comentario": "Cumplen bien su función, son cómodos. El velcro podría ser un poco más fuerte."
+      }
+    ]
+  },
+  {
+    "nombre": "Pantalón de Buzo 'Club Fleece'",
+    "marca": "Nike",
+    "categoria": "Ropa Inferior",
+    "descripcion": "Pantalón de buzo clásico, confeccionado con un suave tejido Fleece cepillado. Un básico cómodo y versátil para el día a día.",
+    "tags": ["pantalon", "buzo", "fleece", "casual", "comodidad"],
+    "variaciones": [
+      {
+        "talla": "M",
+        "color": "Gris Oscuro",
+        "precio": 42990,
+        "stock": 50,
+        "sku": "NKE-CLUBFL-M-GRO"
+      },
+      {
+        "talla": "L",
+        "color": "Gris Oscuro",
+        "precio": 42990,
+        "stock": 60,
+        "sku": "NKE-CLUBFL-L-GRO"
+      },
+      {
+        "talla": "M",
+        "color": "Negro",
+        "precio": 42990,
+        "stock": 70,
+        "sku": "NKE-CLUBFL-M-NEG"
+      }
+    ],
+    "reseñas": [
+      {
+        "user_id": "6848e49fc5613951bb815770",
+        "nombre_usuario_snapshot": "Carlos R.",
+        "puntuacion": 5,
+        "comentario": "El pantalón más cómodo que tengo. Lo uso para todo."
+      }
+    ]
+  },
+  {
+    "nombre": "Zapatillas Urbanas 'Classic Leather'",
+    "marca": "Reebok",
+    "categoria": "Calzado",
+    "descripcion": "Un ícono atemporal. Estas zapatillas de cuero suave ofrecen un estilo clásico y una comodidad duradera para el uso diario.",
+    "tags": ["urbanas", "casual", "cuero", "clasicas"],
+    "variaciones": [
+      {
+        "talla": "40",
+        "color": "Blanco",
+        "precio": 59990,
+        "stock": 30,
+        "sku": "RBK-CLSLEA-40-BLA"
+      },
+      {
+        "talla": "41",
+        "color": "Blanco",
+        "precio": 59990,
+        "stock": 35,
+        "sku": "RBK-CLSLEA-41-BLA"
+      },
+      {
+        "talla": "42",
+        "color": "Negro",
+        "precio": 59990,
+        "stock": 25,
+        "sku": "RBK-CLSLEA-42-NEG"
+      }
+    ],
+    "reseñas": [
+       {
+        "user_id": "684c92532eee5ddc7bfd39ae",
+        "nombre_usuario_snapshot": "Sofia V.",
+        "puntuacion": 5,
+        "comentario": "Me encantan, combinan con todo y son muy cómodas para caminar todo el día."
+      },
+      {
+        "user_id": "684cc4d8a701191806ce0030",
+        "nombre_usuario_snapshot": "Martin L.",
+        "puntuacion": 4,
+        "comentario": "Un clásico que nunca falla. Buena calidad."
+      }
+    ]
+  },
+  {
+    "nombre": "Petate Deportivo 'Defender IV'",
+    "marca": "Adidas",
+    "categoria": "Accesorios",
+    "descripcion": "Bolso deportivo tipo petate de tamaño mediano, con base resistente al agua y múltiples bolsillos para una organización óptima.",
+    "tags": ["bolso", "petate", "gym", "viaje"],
+    "variaciones": [
+      {
+        "talla": "Mediano",
+        "color": "Negro",
+        "precio": 44990,
+        "stock": 40,
+        "sku": "ADS-DEFIV-M-NEG"
+      }
+    ],
+    "reseñas": []
+  },
+  {
+    "nombre": "Polera sin Mangas 'Project Rock'",
+    "marca": "Under Armour",
+    "categoria": "Ropa Superior",
+    "descripcion": "Polera sin mangas de la colección Project Rock. Hecha con tela Charged Cotton que se seca rápidamente y tiene un corte amplio para mayor movilidad.",
+    "tags": ["sin mangas", "tank top", "gym", "project rock"],
+    "variaciones": [
+      {
+        "talla": "L",
+        "color": "Negro",
+        "precio": 37990,
+        "stock": 33,
+        "sku": "UA-PROCK-L-NEG"
+      },
+      {
+        "talla": "XL",
+        "color": "Negro",
+        "precio": 37990,
+        "stock": 28,
+        "sku": "UA-PROCK-XL-NEG"
+      }
+    ],
+    "reseñas": [
+       {
+        "user_id": "684b8da3254cdefa9288c068",
+        "nombre_usuario_snapshot": "Pedro S.",
+        "puntuacion": 5,
+        "comentario": "Tremenda polera para entrenar pesado. Muy cómoda y motivadora."
+      }
+    ]
+  },
+  {
+    "nombre": "Zapatillas de Básquetbol 'LeBron Witness 8'",
+    "marca": "Nike",
+    "categoria": "Calzado",
+    "descripcion": "Domina la cancha con la potencia y agilidad de LeBron. Estas zapatillas ofrecen una sujeción firme y una amortiguación Max Air para despegues y aterrizajes explosivos.",
+    "tags": ["basquetbol", "basketball", "lebron", "max air"],
+    "variaciones": [
+      {
+        "talla": "44",
+        "color": "Negro/Dorado",
+        "precio": 129990,
+        "stock": 12,
+        "sku": "NKE-LBRNW8-44-NDO"
+      },
+      {
+        "talla": "45",
+        "color": "Negro/Dorado",
+        "precio": 129990,
+        "stock": 10,
+        "sku": "NKE-LBRNW8-45-NDO"
+      }
+    ],
+    "reseñas": []
+  },
+  {
+    "nombre": "Muñequeras de Felpa (Pack 2)",
+    "marca": "Puma",
+    "categoria": "Accesorios",
+    "descripcion": "Pack de dos muñequeras de felpa absorbente, perfectas para mantener el sudor alejado de tus manos y cara durante partidos intensos de tenis o entrenamientos.",
+    "tags": ["muñequera", "tenis", "sudor", "accesorio"],
+    "variaciones": [
+      {
+        "talla": "Única",
+        "color": "Blanco",
+        "precio": 9990,
+        "stock": 120,
+        "sku": "PMA-MUNECA-U-BLA"
+      },
+      {
+        "talla": "Única",
+        "color": "Negro",
+        "precio": 9990,
+        "stock": 130,
+        "sku": "PMA-MUNECA-U-NEG"
+      }
+    ],
+    "reseñas": [
+       {
+        "user_id": "684b875e177180bd9c8a26a8",
+        "nombre_usuario_snapshot": "Ana G.",
+        "puntuacion": 5,
+        "comentario": "Absorben muy bien y son suaves. Justo lo que necesitaba para mis partidos de pádel."
+      }
+    ]
+  }
+]
