@@ -105,7 +105,7 @@ async function mainMenu(inquirer) {
         while (!exit) {
             const { action } = await inquirer.prompt([{
                 type: 'list', name: 'action', message: '¿Qué deseas hacer?',
-                choices: [ { name: '➕ Añadir Producto al Carrito', value: 'add' }, { name: '👀 Ver y Gestionar mi Carrito', value: 'view' }, new inquirer.Separator(), { name: '🚪 Salir', value: 'exit' } ]
+                choices: [ { name: '👀 Ver y Gestionar mi Carrito', value: 'view' }, new inquirer.Separator(), { name: '🚪 Salir', value: 'exit' } ]
             }]);
 
             switch (action) {
