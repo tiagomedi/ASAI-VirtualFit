@@ -43,6 +43,30 @@ async function interpretarConsulta(query, userId) {
     const q = query.toLowerCase().trim();
     console.log(`[asaiService] Interpretando consulta para el usuario ${userId}: "${q}"`);
 
+    
+
+    
+    const precioRegex = /entre\s+(\d+)\s+y\s+(\d+)/;
+    const match = q.match(precioRegex);
+    if (match) {
+        const min = parseInt(match[1], 10);
+        const max = parseInt(match[2], 10);
+
+        // Busca productos en ese rango de precio
+        const productos = await Product.find({
+            'variaciones.precio': { $gte: min, $lte: max }
+        }).limit(10);
+
+        if (productos.length === 0) {
+            return `No encontré productos entre $${min} y $${max}.`;
+        }
+
+        // Devuelve una lista simple de nombres y precios
+        return productos.map(p => 
+            `${p.nombre} - desde $${Math.min(...p.variaciones.map(v => v.precio))}`
+        ).join('\n');
+    }
+
     // 1. Verificación de estado de pedido (lógica existente)
     if (q.includes('pedido') || q.includes('orden')) {
         const ultimoPedido = await Order.findOne({ user_id: userId }).sort({ createdAt: -1 }).lean();
@@ -93,10 +117,15 @@ async function interpretarConsulta(query, userId) {
 
         // Formateamos una respuesta amigable
         let respuesta = `¡Claro! Encontré esto para ti:\n`;
+
         productos.forEach(p => {
-            respuesta += `  - ${p.nombre} marca ${p.marca}\n`;
+            respuesta += `  - ${p.nombre} marca ${p.marca} - precio $${Math.min(...p.variaciones.map(v => v.precio))}\n`;
         });
+
+    
         return respuesta;
+
+
     }
 
     // 3. Respuesta por defecto (lógica existente)

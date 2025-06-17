@@ -154,6 +154,8 @@ async function handleAdminTasks(inquirer, adminUser) {
 
 async function handleAsaiChat(inquirer, user) {
     console.log('\n--- Charlando con ASAI (escribe "salir" para terminar) ---');
+    console.log('PREGUNTAS SUGERIDAS: \n"buscar zapatillas", "mostrar productos nike", "tienes algo de color azul", "muéstrame poleras adidas", \n"estado de mi pedido", "mostrar precios entre (precio min) y (precio max)"\n');
+
     while (true) {
         const { consulta } = await inquirer.prompt([{ type: 'input', name: 'consulta', message: 'Tú:' }]);
         if (consulta.trim().toLowerCase() === 'salir') break;
