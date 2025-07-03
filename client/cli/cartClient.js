@@ -287,7 +287,7 @@ async function manageCartMenu(inquirer, usuario) {
                      const calculatedDiscountAmount = currentCartTotal * DISCOUNT_PERCENTAGE;
                     const { useDiscount } = await inquirer.prompt([{
                         type: 'confirm', name: 'useDiscount',
-                        message: `Tienes ${usuario.asai_points} ASAIpoints. ¿Deseas usar EXACTAMENTE ${POINTS_FOR_20_PERCENT_DISCOUNT} de ellos para obtener un 20% de descuento ($${calculatedDiscountAmount.toFixed(2)}) en tu compra ($${currentCartTotal.toFixed(2)})?`,
+                        message: `Tienes ${usuario.asai_points} ASAIpoints. ¿Deseas usar ${POINTS_FOR_20_PERCENT_DISCOUNT} de ellos para obtener un 20% de descuento ($${calculatedDiscountAmount.toFixed(2)}) en tu compra ($${currentCartTotal.toFixed(2)})?`,
                         default: true
                     }]);
 
