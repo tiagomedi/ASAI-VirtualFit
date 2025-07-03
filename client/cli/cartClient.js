@@ -34,12 +34,12 @@ function sendRequest(serviceName, requestPayload) {
         // Enviamos el mensaje formateado
         sendMessage(serviceName, payloadString);
 
-        const timeoutDuration = 5000; // 5 segundos (Ajustado por estabilidad)
+        const timeoutDuration = 5000; // 5 segundos 
         const timeout = setTimeout(() => {
             if (responsePromise && responsePromise.reject && responsePromise.serviceName === serviceName) {
                 console.error(`[Cliente] Timeout de ${timeoutDuration}ms alcanzado para servicio '${serviceName}'.`);
                 responsePromise.reject(new Error(`Timeout: El servidor ${serviceName} no respondió a tiempo (${timeoutDuration}ms).`));
-                responsePromise = {}; // Clean up the promise reference
+                responsePromise = {}; 
             }
         }, timeoutDuration); 
 
