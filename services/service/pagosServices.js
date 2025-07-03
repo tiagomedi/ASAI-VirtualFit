@@ -45,10 +45,10 @@ async function startService() {
             const header = buffer.substring(0, 5);
             const length = parseInt(header, 10);
 
-             if (isNaN(length) || length <= 0 || length > 100000) { // Add more strict checks for length
+            if (isNaN(length) || length <= 0 || length > 100000) { 
                 console.error(`❌ [${SERVICE_NAME}Service] Invalid or negative header length "${header}" (Parsed: ${length}). Clearing buffer to prevent infinite loop.`);
-                buffer = ''; // Clear buffer on invalid header
-                break; // Exit while loop
+                buffer = ''; 
+                break; 
             }
 
             const totalMessageLength = 5 + length;
@@ -87,56 +87,48 @@ async function startService() {
                     console.log(`[${SERVICE_NAME}Service] Processing client request.`);
                     const requestPayloadString = contentAfterService; 
                     (async (sendResponseFunc, sendErrorFunc, socket) => {
-                        let session = null; // Initialize session to null
+                        let session = null; 
                         try {
-                            const requestData = JSON.parse(requestPayloadString); // Parse payload inside try
-                            // Start session and transaction only for the specific action that needs it
+                            const requestData = JSON.parse(requestPayloadString); 
                             if (requestData.action === 'procesar_pago') { 
                                 session = await mongoose.connection.startSession();
                                 session.startTransaction();
-                                console.log(`--- [${SERVICE_NAME}Service] Transaction started ---`); // Keep transaction log
+                                console.log(`--- [${SERVICE_NAME}Service] Transaction started ---`); 
                             }
 
                             let resultado;
-
-                            // --- Route Action ---
                             if (requestData.action === 'procesar_pago') {
-                                // Pass session and socket as required by procesarPago logic
                                 resultado = await procesarPago(requestData.payload, session, socket);
                             } else {
-                                // Action not recognized for THIS service
                                 throw new Error(`Acción no reconocida en servicio '${SERVICE_NAME}': '${requestData.action}'`);
                             }
 
-                            // --- Send Response ---
                             if (session && session.inTransaction()) { 
                                 await session.commitTransaction();
-                                console.log(`--- [${SERVICE_NAME}Service] Transaction committed ---`); // Keep transaction log
+                                console.log(`--- [${SERVICE_NAME}Service] Transaction committed ---`); 
                             }
-                            sendResponseFunc(socket, resultado); // Use passed function and serviceSocket
+                            sendResponseFunc(socket, resultado); 
 
                         } catch (error) {
-                            console.error(`❌ [${SERVICE_NAME}Service] ERROR during async processing:`, error.message); // Keep error log
-                            // Abort transaction only if it was started and is active
+                            console.error(`❌ [${SERVICE_NAME}Service] ERROR during async processing:`, error.message); 
                             if (session && session.inTransaction()) { 
                                 await session.abortTransaction();
-                                console.log(`--- [${SERVICE_NAME}Service] Transaction aborted ---`); // Keep transaction log
+                                console.log(`--- [${SERVICE_NAME}Service] Transaction aborted ---`); 
                             }
-                            sendErrorFunc(socket, error.message); // Use passed function and serviceSocket
+                            sendErrorFunc(socket, error.message); 
                         } finally {
-                            // End session only if it was started
                             if (session) { 
                                 await session.endSession();
-                                console.log(`--- [${SERVICE_NAME}Service] Session ended ---`); // Keep session log
+                                console.log(`--- [${SERVICE_NAME}Service] Session ended ---`); 
                             }
                         }
-                    })(sendResponse, sendError, serviceSocket); // Execute IIFE and pass variables
+                    })(sendResponse, sendError, serviceSocket); 
 
                 } else {
                     console.warn(`❌ [${SERVICE_NAME}Service] Client request format message for wrong service ('${serviceReceived}'). Expected '${SERVICE_NAME}'. Ignoring.`);
                 }
             }
-        } // End while loop
+        } 
     });
 
     serviceSocket.on('close', () => { console.log(`[${SERVICE_NAME}Service] Conexión cerrada. Reintentando en 5 segundos...`); buffer = ''; setTimeout(connectToBus, 5000); });
