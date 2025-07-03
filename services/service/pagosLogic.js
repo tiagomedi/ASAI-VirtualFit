@@ -17,9 +17,10 @@ function _sendMessageToService(socket, serviceName, payload) {
     }
 }
 
+// Recibimos 'pointsToUse'. Si es 100, significa que el cliente quiere usar el descuento.
 async function procesarPago({ user_id, direccion_id, metodo_pago_id, pointsToUse = 0 }, session, serviceSocket) {
     console.log(`--- [pagosLogic] Ejecutando lógica de negocio dentro de la transacción ---`);
-    
+
     // Obtenemos el usuario dentro de la sesión para asegurar la consistencia
     const usuario = await User.findById(user_id).session(session);
     if (!usuario) throw new Error("Usuario no encontrado.");
@@ -30,7 +31,7 @@ async function procesarPago({ user_id, direccion_id, metodo_pago_id, pointsToUse
     const metodoPagoUsado = usuario.metodos_pago.find(p => p._id.toString() === metodo_pago_id);
     if (!metodoPagoUsado) throw new Error("Método de pago no válido o no encontrado.");
     
-    let totalPago = 0;
+    let totalPagoSinDescuento = 0; 
     const itemsSnapshot = [];
     const productosAActualizar = [];
     
@@ -46,7 +47,7 @@ async function procesarPago({ user_id, direccion_id, metodo_pago_id, pointsToUse
         if (variacion.stock < item.cantidad) throw new Error(`Stock insuficiente para '${producto.nombre} - ${variacion.talla}/${variacion.color}'. Disponible: ${variacion.stock}, Solicitado: ${item.cantidad}.`);
         
         // No descontamos stock ni guardamos todavía, solo calculamos el total basado en los precios actuales
-        totalPago += variacion.precio * item.cantidad;
+        totalPagoSinDescuento += variacion.precio * item.cantidad;
         
         // Preparamos los datos para el snapshot de la orden
         itemsSnapshot.push({
@@ -56,92 +57,93 @@ async function procesarPago({ user_id, direccion_id, metodo_pago_id, pointsToUse
             talla: variacion.talla,
             color: variacion.color,
             cantidad: item.cantidad,
-            precio_unitario: variacion.precio // Precio unitario sin descuento por puntos
+            precio_unitario: variacion.precio 
         });
 
-        // Preparamos la actualización de stock
         variacion.stock -= item.cantidad;
-        productosAActualizar.push(producto); // Agregamos el producto modificado a la lista para guardar
+        productosAActualizar.push(producto); 
     }
+    
+    console.log(`[pagosLogic] Total sin descuento calculado: ${totalPagoSinDescuento.toFixed(2)}`);
 
-    // --- Lógica de ASAIpoints ---
+    let totalPagoFinal = totalPagoSinDescuento;
     let puntosRealmenteUsados = 0;
-    if (pointsToUse > 0) {
-        // Validar que el usuario tiene suficientes puntos
-        if (usuario.asai_points < pointsToUse) {
-             // Esto no debería pasar si el cliente valida bien, pero es una seguridad
-            console.warn(`[pagosLogic] Usuario ${user_id} intentó usar ${pointsToUse} puntos pero solo tiene ${usuario.asai_points}. Usando ${usuario.asai_points}.`);
-            puntosRealmenteUsados = usuario.asai_points; // Usar solo los que tiene
-        } else {
-            puntosRealmenteUsados = pointsToUse;
-        }
+    const PUNTOS_PARA_DESCUENTO = 100; // El número exacto de puntos para el 20%
+    const PORCENTAJE_DESCUENTO = 0.20; // 20%
 
-        const descuentoPorPuntos = puntosRealmenteUsados * 1000; // Cada punto descuenta 1000 unidades
-        
-        // El descuento no puede hacer que el total sea negativo
-        const descuentoAplicable = Math.min(descuentoPorPuntos, totalPago);
-        
-        // Ajustar el total a pagar
-        totalPago = totalPago - descuentoAplicable;
-        
-        // Recalcular puntos realmente usados basado en el descuento aplicado
-        // Esto es crucial si el descuento aplicable fue menor que el descuento potencial (totalPago era muy bajo)
-        puntosRealmenteUsados = Math.floor(descuentoAplicable / 1000);
+    if (pointsToUse > 0) { // Cliente pidió usar puntos (esperamos que sea 100)
+        if (usuario.asai_points >= PUNTOS_PARA_DESCUENTO && totalPagoSinDescuento > 0) {
+            console.log(`[pagosLogic] Aplicando descuento del ${PORCENTAJE_DESCUENTO*100}% usando ${PUNTOS_PARA_DESCUENTO} puntos.`);
 
-        if (puntosRealmenteUsados > 0) {
-             usuario.asai_points -= puntosRealmenteUsados; // Descontar puntos del usuario
-            console.log(`[pagosLogic] Se usaron ${puntosRealmenteUsados} ASAIpoints para un descuento de $${descuentoAplicable.toFixed(2)}. Puntos restantes del usuario ${user_id}: ${usuario.asai_points}.`);
-             // Agregamos al usuario a la lista de cosas a guardar en la transacción
-             // Solo agregamos al usuario si sus puntos fueron modificados
-            productosAActualizar.push(usuario);
+            const descuentoMonto = totalPagoSinDescuento * PORCENTAJE_DESCUENTO; 
+            totalPagoFinal = totalPagoSinDescuento - descuentoMonto; 
+
+            // Asegurarse de que el total final no sea negativo si el descuento es mayor que el total sin descuento
+            if (totalPagoFinal < 0) {
+                totalPagoFinal = 0;
+                console.log(`[pagosLogic] Debug - Total final negativo ($${totalPagoFinal.toFixed(2)}), ajustando a 0.`);
+            }
+
+            puntosRealmenteUsados = PUNTOS_PARA_DESCUENTO; // Se usan exactamente los 100 puntos
+
+            usuario.asai_points -= puntosRealmenteUsados; // Descontar los 100 puntos
+
+            console.log(`[pagosLogic] Descuento aplicado: Usados ${puntosRealmenteUsados} ASAIpoints. Descuento de $${descuentoMonto.toFixed(2)}. Total original: $${totalPagoSinDescuento.toFixed(2)}. Total final pagado: $${totalPagoFinal.toFixed(2)}. Puntos restantes: ${usuario.asai_points}.`);
+
+            productosAActualizar.push(usuario); 
+
         } else {
-            console.log(`[pagosLogic] Aunque se solicitaron puntos, el descuento aplicable fue 0 (total bajo). No se usaron puntos.`);
-            puntosRealmenteUsados = 0; // Asegurarse de que si el descuento fue 0, los puntos usados también
+            if (pointsToUse > 0) { 
+                console.warn(`[pagosLogic] Cliente ${user_id} solicitó descuento (${pointsToUse} pts), pero no cumple requisitos (puntos usuario: ${usuario.asai_points}, total sin descuento: ${totalPagoSinDescuento}). No se aplica descuento.`);
+            } else { 
+                console.log(`[pagosLogic] Cliente no solicitó usar el descuento de ${PUNTOS_PARA_DESCUENTO} puntos.`);
+            }
         }
+    } else {
+         // Cliente no pidió usar puntos (pointsToUse es 0)
+        console.log(`[pagosLogic] Cliente no solicitó usar puntos. No se aplica descuento por puntos.`);
+         // totalPagoFinal ya está igual a totalPagoSinDescuento
+         puntosRealmenteUsados = 0; // Asegurarse de que sea 0
     }
-    // --- Fin Lógica ASAIpoints ---
+    // --- Fin Lógica de ASAIpoints ---
 
-
-    // Guardar productos con stock actualizado y el usuario con puntos actualizados (si se modificaron)
-    // Usamos Promise.all para ejecutar todas las operaciones de guardado en paralelo dentro de la transacción
     await Promise.all(productosAActualizar.map(doc => doc.save({ session })));
     console.log(`[pagosLogic] Stock de ${productosAActualizar.filter(d => d.variaciones).length} producto(s) y puntos del usuario (usados: ${puntosRealmenteUsados}) actualizados.`);
-    
+
     // Crear la nueva orden con el total final y los puntos usados
     const nuevaOrden = new Order({
         user_id,
-        total_pago: totalPago, // El total final después de aplicar descuentos
+        total_pago: totalPagoFinal,
         estado: 'Procesando',
-        points_used: puntosRealmenteUsados, // Registrar cuántos puntos se usaron
+        points_used: puntosRealmenteUsados, 
         direccion_envio: { calle: direccionEnvio.calle, ciudad: direccionEnvio.ciudad, region: direccionEnvio.region, codigo_postal: direccionEnvio.codigo_postal },
         metodo_pago_usado: { tipo: metodoPagoUsado.tipo, detalle: metodoPagoUsado.detalle },
-        items: itemsSnapshot // Los items con sus precios originales antes del descuento por puntos
+        items: itemsSnapshot 
     });
     // Crear la orden dentro de la sesión
     const [savedOrder] = await Order.create([nuevaOrden], { session });
-    console.log(`[pagosLogic] Nueva orden ${savedOrder._id} creada exitosamente con total final $${totalPago.toFixed(2)} y ${puntosRealmenteUsados} puntos usados.`);
-    
+    console.log(`[pagosLogic] Nueva orden ${savedOrder._id} creada exitosamente con total final $${totalPagoFinal.toFixed(2)} y ${puntosRealmenteUsados} puntos usados.`);
+
     // Vaciar el carrito del usuario
     usuario.carrito.items = [];
     usuario.carrito.updated_at = new Date();
     await usuario.save({ session }); // Guardar el usuario con el carrito vacío dentro de la sesión
     console.log(`[pagosLogic] Carrito del usuario ${user_id} vaciado.`);
-    
-    // Enviar mensaje al servicio de puntos ASUMIENDO que los puntos se GANAN sobre el total PAGADO (después del descuento)
+
     if (serviceSocket && savedOrder.total_pago > 0) {
         const pointPayload = {
             action: 'add_points',
             payload: {
                 user_id: savedOrder.user_id.toString(),
-                total_pago: savedOrder.total_pago // Pasar el total final pagado
+                total_pago: savedOrder.total_pago
             }
         };
         _sendMessageToService(serviceSocket, 'point', pointPayload);
     } else if (savedOrder.total_pago <= 0) {
         console.log('[pagosLogic] Total de pago es <= 0 después del descuento. No se envían puntos para ganar.');
     }
-    
-    return savedOrder; // Devolver la orden creada
+
+    return savedOrder; 
 }
 
 module.exports = { procesarPago };
