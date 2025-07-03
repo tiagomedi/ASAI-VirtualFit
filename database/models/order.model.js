@@ -12,6 +12,10 @@ const orderSchema = new Schema({
         enum: ['Procesando', 'Enviado', 'Entregado', 'Cancelado'],
         default: 'Procesando'
     },
+    points_used: {
+        type: Number,
+        default: 0
+    },
     // --- Snapshot de datos ---
     direccion_envio: {
         type: {
