@@ -14,7 +14,7 @@ async function crearOrden(orderData) {
         for (const item of items) {
             const producto = await Product.findById(item.producto_id);
             if (!producto) throw new Error(`Producto con ID ${item.producto_id} no encontrado.`);
-            if (!producto.variaciones || producto.variaciones.length === 0) throw new Error(`El producto '${producto.nombre}' no tiene variaciones.`);
+            if (!producto.variaciones || producto.variaciones.length === 0) throw new Error(`El producto '${producto.nombre}' ya no tiene variaciones disponibles.`);
             const variacion = producto.variaciones[0];
 
             if (typeof variacion.precio !== 'number') throw new Error(`El producto no tiene un precio válido.`);
@@ -69,10 +69,9 @@ async function buscarOrdenesPorUsuario(email) {
 
     console.log(`--- [orderLogic] Buscando las 5 órdenes más recientes para el usuario ID: ${usuario._id}`);
     
-    // --- CAMBIO CLAVE: AÑADIMOS .limit(5) ---
     const ordenes = await Order.find({ user_id: usuario._id })
-                              .sort({ createdAt: -1 })
-                              .limit(5); // Traemos solo las últimas 5
+                            .sort({ createdAt: -1 })
+                            .limit(5); 
 
     console.log(`--- [orderLogic] Se encontraron ${ordenes.length} órdenes. Creando resumen...`);
     
@@ -81,7 +80,8 @@ async function buscarOrdenesPorUsuario(email) {
         createdAt: orden.createdAt,
         estado: orden.estado,
         total_pago: orden.total_pago,
-        itemCount: orden.items.length
+        itemCount: orden.items.length,
+        points_used: orden.points_used 
     }));
 
     return resumenOrdenes;
