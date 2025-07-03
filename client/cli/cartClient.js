@@ -34,7 +34,7 @@ function sendRequest(serviceName, requestPayload) {
         // Enviamos el mensaje formateado
         sendMessage(serviceName, payloadString);
 
-        const timeoutDuration = 5000; // 5 segundos
+        const timeoutDuration = 5000; // 5 segundos (Ajustado por estabilidad)
         const timeout = setTimeout(() => {
             if (responsePromise && responsePromise.reject && responsePromise.serviceName === serviceName) {
                 console.error(`[Cliente] Timeout de ${timeoutDuration}ms alcanzado para servicio '${serviceName}'.`);
@@ -246,7 +246,7 @@ async function manageCartMenu(inquirer, usuario) {
     let paymentSuccess = false; 
 
     while (!goBack && !paymentSuccess) {
-        try {
+        try { 
             console.log("Consultando carrito...");
             const cart = await sendRequest('carro', { action: 'view', user_id: usuario._id.toString() });
             const { itemCount, total: currentCartTotal } = displayCart(cart); 
@@ -276,75 +276,59 @@ async function manageCartMenu(inquirer, usuario) {
                 const dirChoices = usuario.direcciones.map(d => ({ name: `${d.nombre_direccion}: ${d.calle}, ${d.ciudad}, ${d.region || ''} CP:${d.codigo_postal}`, value: d._id.toString() }));
                 const metodoChoices = usuario.metodos_pago.map(p => ({ name: `${p.tipo} - ${p.detalle}`, value: p._id.toString() }));
 
-
                 const { direccion_id } = await inquirer.prompt([{ type: 'list', name: 'direccion_id', message: '🚚 Selecciona la dirección de envío:', choices: dirChoices }]);
                 const { metodo_pago_id } = await inquirer.prompt([{ type: 'list', name: 'metodo_pago_id', message: '💳 Selecciona el método de pago:', choices: metodoChoices }]);
 
                 let pointsToUse = 0; 
+                const POINTS_FOR_20_PERCENT_DISCOUNT = 100; 
+                const DISCOUNT_PERCENTAGE = 0.20;
 
-                if (usuario.asai_points > 0 && currentCartTotal > 0) {
-                    const maxPointsCanReduce = Math.floor(currentCartTotal / 1000); // Max points that can be applied without making total negative (each point discounts 1000)
-                    const effectiveMaxPoints = Math.min(usuario.asai_points, maxPointsCanReduce); // Max points the user has AND can apply without exceeding total
+                if (usuario.asai_points >= POINTS_FOR_20_PERCENT_DISCOUNT && currentCartTotal > 0) {
+                     const calculatedDiscountAmount = currentCartTotal * DISCOUNT_PERCENTAGE;
+                    const { useDiscount } = await inquirer.prompt([{
+                        type: 'confirm', name: 'useDiscount',
+                        message: `Tienes ${usuario.asai_points} ASAIpoints. ¿Deseas usar EXACTAMENTE ${POINTS_FOR_20_PERCENT_DISCOUNT} de ellos para obtener un 20% de descuento ($${calculatedDiscountAmount.toFixed(2)}) en tu compra ($${currentCartTotal.toFixed(2)})?`,
+                        default: true
+                    }]);
 
-                    if (effectiveMaxPoints > 0) {
-                        const { usePoints } = await inquirer.prompt([{
-                            type: 'confirm', name: 'usePoints', 
-                            message: `Tienes ${usuario.asai_points} ASAIpoints (equivalen a $${(usuario.asai_points * 1000).toFixed(2)}). ¿Deseas usar puntos para esta compra? (Máximo aplicable: ${effectiveMaxPoints} puntos / $${(effectiveMaxPoints * 1000).toFixed(2)})`, 
-                            default: true 
-                        }]);
-
-                        if (usePoints) {
-                            const { numPoints } = await inquirer.prompt([{
-                                type: 'number', name: 'numPoints', 
-                                message: `¿Cuántos puntos deseas usar? (Max ${effectiveMaxPoints})`, 
-                                default: effectiveMaxPoints, // Suggest using the max applicable by default
-                                validate: (input) => {
-                                    if (isNaN(input) || input < 0) return 'Introduce un número válido mayor o igual a 0.';
-                                     // Ensure no more points are used than available OR can be applied
-                                    if (input > effectiveMaxPoints) return `No puedes usar más de ${effectiveMaxPoints} puntos para esta compra.`;
-                                    return true;
-                                }
-                            }]);
-                             // Ensure pointsToUse is a non-negative integer
-                            pointsToUse = Math.max(0, parseInt(numPoints, 10) || 0); 
-                        }
+                    if (useDiscount) {
+                        pointsToUse = POINTS_FOR_20_PERCENT_DISCOUNT; 
+                        console.log(`✨ Decidiste usar ${pointsToUse} ASAIpoints para el descuento.`);
                     } else {
-                        console.log(`\nℹ️ Tienes ${usuario.asai_points} ASAIpoints, pero el total de $${currentCartTotal.toFixed(2)} no es suficiente para aplicar puntos.`);
+                        console.log('🚫 Decidiste no usar puntos para el descuento.');
+                        pointsToUse = 0; 
                     }
-                } else if (usuario.asai_points <= 0) {
+                } else if (usuario.asai_points > 0) {
+                    console.log(`ℹ️ Tienes ${usuario.asai_points} ASAIpoints, pero necesitas EXACTAMENTE ${POINTS_FOR_20_PERCENT_DISCOUNT} para el descuento del 20%.`);
+                    pointsToUse = 0; 
+                } else {
                     console.log('\nℹ️ No tienes ASAIpoints disponibles para usar.');
-                } else if (currentCartTotal <= 0) {
-                    console.log('\nℹ️ El total del carrito es $0, no se necesitan usar puntos.');
+                    pointsToUse = 0; 
                 }
-                // --- End Logic to use ASAIpoints ---
+                // --- End Logic for 20% discount ---
 
 
                 console.log("\nProcesando pago...");
-
-                // Send the request to the 'pagos' service, including points to use (pointsToUse will be 0 if not used)
                 const ordenCreada = await sendRequest('pagos', { 
                     action: 'procesar_pago', 
                     payload: { 
                         user_id: usuario._id.toString(), 
                         direccion_id, 
                         metodo_pago_id,
-                        pointsToUse: pointsToUse 
+                        pointsToUse: pointsToUse // Send 0 or 100
                     } 
                 });
                 
                 console.log('\n✅ ¡PAGO EXITOSO! Se ha creado la siguiente orden:');
-                // Display the created order, which now includes final total_pago and points_used
                 console.log(JSON.stringify(ordenCreada, null, 2));
                 
-                paymentSuccess = true; // Mark success to exit the main menu loop
-                goBack = true; // Exit the cart menu
+                paymentSuccess = true; 
+                goBack = true; 
 
-                // Refresh user data after a payment action (points/cart)
-                // This is useful if you plan to continue in the main menu and display updated points
-                const updatedUsuario = await User.findById(usuario._id); // Fetch the updated user from DB
+                const updatedUsuario = await User.findById(usuario._id); 
                 if(updatedUsuario) {
-                    usuario.asai_points = updatedUsuario.asai_points; // Update points in the local user object
-                    console.log(`\n✨ Tu nuevo saldo de ASAIpoints es: ${updatedUsuario.asai_points}`); // Log updated points
+                    usuario.asai_points = updatedUsuario.asai_points; 
+                    console.log(`\n✨ Tu nuevo saldo de ASAIpoints es: ${updatedUsuario.asai_points}`); 
                 }
 
 
@@ -353,15 +337,13 @@ async function manageCartMenu(inquirer, usuario) {
                 continue; 
             } else if (cartAction === 'update' || cartAction === 'remove') {
                 const cartObj = cart.toObject ? cart.toObject() : cart;
-                 // Ensure there are items to modify/remove
                 if (cartObj.items.length === 0) {
                     console.log("No hay items en el carrito para realizar esta acción.");
-                    continue; // Return to cart menu
+                    continue; 
                 }
 
                 const { itemToModify } = await inquirer.prompt([{
                     type: 'list', name: 'itemToModify', message: `Selecciona el ítem a ${cartAction === 'update' ? 'modificar' : 'eliminar'}:`,
-                     // Use producto_variacion_id as value to identify the item in the cart
                     choices: cartObj.items.map((item, i) => ({ name: `${i + 1}. ${item.nombre_snapshot} (${item.cantidad} en carrito)`, value: item.producto_variacion_id.toString() }))
                 }]);
 
@@ -373,36 +355,31 @@ async function manageCartMenu(inquirer, usuario) {
                             return true;
                         }
                     }]);
-                     // Send update request to 'carro' service
                     console.log("Enviando solicitud al servicio 'carro' para actualizar cantidad...");
                     await sendRequest('carro', { action: 'update', user_id: usuario._id.toString(), producto_variacion_id: itemToModify, nueva_cantidad: parseInt(newQty, 10) });
                     console.log("✅ Cantidad actualizada.");
                 } else if (cartAction === 'remove') {
-                     // Send remove request to 'carro' service
                     console.log("Enviando solicitud al servicio 'carro' para eliminar ítem...");
                     await sendRequest('carro', { action: 'remove', user_id: usuario._id.toString(), producto_variacion_id: itemToModify });
                     console.log("✅ Ítem eliminado.");
                 }
             }
-        } catch (error) {
+        } catch (error) { 
             console.error("\n❌ Error en la gestión del carrito:", error.message);
-            goBack = true; // Exit cart menu and return to main
-            paymentSuccess = false; // Ensure we don't exit main menu due to an error here
-        }
-    }
+            goBack = true;
+            paymentSuccess = false; 
+        } 
+    } 
     return paymentSuccess;
 }
 
-// Function to find and display orders (copied from orderClient.js and adapted)
 async function runFindOrdersLogic(inquirer, usuario) {
     try {
         console.log('\n--- 🔍 Buscando Órdenes de Usuario 🔍 ---');
-        // We already have the user, use their ID or email directly
         const email = usuario.correo.trim().toLowerCase();
         const findRequest = { action: 'find_orders', payload: { email: email } };
         
         console.log("\nEnviando solicitud para buscar órdenes...");
-        // sendRequest expects the service to respond with Status+Payload
         const responseData = await sendRequest('order', findRequest); 
         
         if (!responseData || responseData.length === 0) {
@@ -415,7 +392,7 @@ async function runFindOrdersLogic(inquirer, usuario) {
                 console.log(`  Fecha:        ${new Date(orden.createdAt).toLocaleString('es-ES')}`);
                 console.log(`  Estado:       ${orden.estado}`);
                 console.log(`  Total Pagado: $${(orden.total_pago || 0).toLocaleString('es-ES')}`);
-                console.log(`  Puntos Usados: ${orden.points_used || 0}`); // Display points used
+                console.log(`  Puntos Usados: ${orden.points_used || 0}`); 
                 console.log(`  Nº de Items:  ${orden.itemCount}`);
                 console.log("=============================================");
             });
@@ -424,6 +401,5 @@ async function runFindOrdersLogic(inquirer, usuario) {
         console.error(`\n❌ Error al buscar órdenes: ${error.message}`);
     }
 }
-
 
 startClient();
