@@ -6,106 +6,181 @@ const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
 
 let clientSocket;
-let responsePromise = {};
+let responsePromise = {}; 
+function header(n) { return String(n).padStart(5, '0'); }
 
 function sendMessage(serviceName, data) {
     const service = serviceName.padEnd(5, ' ');
-    const payload = service + data;
-    const header = String(payload.length).padStart(5, '0');
-    const fullMessage = header + payload;
-    console.log(`\n[Cliente] -> Enviando a '${serviceName}': ${fullMessage.substring(0, 150)}...`);
+    const fullMessage = header(service.length + data.length) + service + data;
+    console.log(`\n[Cliente] -> Enviando a '${serviceName}' (${fullMessage.length} bytes)`);
     clientSocket.write(fullMessage);
 }
 
+// Función que envía una solicitud y devuelve una promesa
 function sendRequest(serviceName, requestPayload) {
     return new Promise((resolve, reject) => {
-        responsePromise = { resolve, reject }; 
-        sendMessage(serviceName, JSON.stringify(requestPayload));
+        if (responsePromise && responsePromise.reject) {
+            console.warn("[Cliente] Cancelando promesa anterior antes de enviar nueva solicitud.");
+            responsePromise.reject(new Error("Solicitud cancelada por envío de nueva solicitud."));
+            responsePromise = {}; // Limpiar inmediatamente
+        }
 
+        // Almacenamos las funciones de resolución/rechazo para usarlas en el 'data' handler
+        responsePromise = { resolve, reject, serviceName: serviceName }; // Guardar el nombre del servicio esperado
+        
+        // Convertimos el payload a JSON string antes de enviarlo
+        const payloadString = JSON.stringify(requestPayload);
+        
+        // Enviamos el mensaje formateado
+        sendMessage(serviceName, payloadString);
+
+        const timeoutDuration = 5000; // 5 segundos
         const timeout = setTimeout(() => {
-            if (responsePromise.reject) {
-                responsePromise.reject(new Error("Timeout: El servidor no respondió a tiempo."));
-                responsePromise = {};
+            if (responsePromise && responsePromise.reject && responsePromise.serviceName === serviceName) {
+                console.error(`[Cliente] Timeout de ${timeoutDuration}ms alcanzado para servicio '${serviceName}'.`);
+                responsePromise.reject(new Error(`Timeout: El servidor ${serviceName} no respondió a tiempo (${timeoutDuration}ms).`));
+                responsePromise = {}; // Clean up the promise reference
             }
-        }, 1000);
+        }, timeoutDuration); 
 
-        responsePromise.resolve = (value) => { clearTimeout(timeout); resolve(value); };
-        responsePromise.reject = (err) => { clearTimeout(timeout); reject(err); };
+        const originalResolve = resolve;
+        const originalReject = reject;
+        
+        responsePromise.resolve = (value) => { 
+            clearTimeout(timeout); 
+            originalResolve(value); 
+            responsePromise = {}; 
+        };
+        responsePromise.reject = (err) => { 
+            clearTimeout(timeout); 
+            originalReject(err); 
+            responsePromise = {}; 
+        };
     });
 }
 
 async function startClient() {
-    await connectDB();
-    const inquirer = (await import('inquirer')).default;
-    clientSocket = new net.Socket();
+    try {
+        await connectDB();
+        const inquirer = (await import('inquirer')).default;
+        clientSocket = new net.Socket();
 
-    clientSocket.connect(BUS_PORT, BUS_HOST, () => {
-        console.log(`[Cliente] Conectado al bus en ${BUS_PORT}.`);
-        mainMenu(inquirer);
-    });
+        // Conectar el socket al bus
+        clientSocket.connect(BUS_PORT, BUS_HOST, () => {
+            console.log(`✅ [Cliente] Conectado al bus en ${BUS_PORT}.`);
+            // Una vez conectado, mostramos el menú principal al usuario
+            mainMenu(inquirer);
+        });
 
-    let buffer = '';
-    clientSocket.on('data', (data) => {
-        buffer += data.toString();
-        while (buffer.length >= 5) {
-            const length = parseInt(buffer.substring(0, 5), 10);
-            if (isNaN(length) || buffer.length < 5 + length) {
-                break;
-            }
-            const totalMessageLength = 5 + length;
-            const messageToProcess = buffer.substring(0, totalMessageLength);
-            buffer = buffer.substring(totalMessageLength);
-            
-            console.log(`\n[Cliente] <- Procesando mensaje: ${messageToProcess.substring(0, 200)}...`);
-            const status = messageToProcess.substring(10, 12).trim();
-            const messageContent = messageToProcess.substring(12);
+        // --- MANEJADOR CENTRALIZADO DE DATOS ---
+        let buffer = '';
+        clientSocket.on('data', (data) => {
+            buffer += data.toString();
 
-            if (Object.keys(responsePromise).length > 0) {
-                try {
-                    const responseData = JSON.parse(messageContent);
-                    if (status === 'OK') {
-                        if (responseData.error) {
-                            responsePromise.reject(new Error(responseData.error));
-                        } else {
-                            responsePromise.resolve(responseData);
-                        }
-                    } else { 
-                        responsePromise.reject(new Error(`El bus reportó un error (NK): ${responseData.error || messageContent}`));
-                    }
-                } catch (e) {
-                    responsePromise.reject(new Error(`Error al procesar JSON de respuesta: ${e.message}`));
+            while (buffer.length >= 5) {
+                const header = buffer.substring(0, 5);
+                const length = parseInt(header, 10);
+
+                if (isNaN(length) || length <= 0 || length > 100000) { 
+                    console.error(`❌ [Cliente] Invalid or negative header length "${header}" (Parsed: ${length}). Clearing buffer.`);
+                    buffer = ''; 
+                    break;
                 }
+
+                const totalMessageLength = 5 + length;
+                if (length > 100000) { 
+                    console.error(`❌ [Cliente] Excessive message length ${length}. Possible buffer corruption. Clearing buffer.`);
+                    buffer = '';
+                    break;
+                }
+
+
+                if (buffer.length < totalMessageLength) {
+                    break;
+                }
+                const fullMessage = buffer.substring(0, totalMessageLength);
+                buffer = buffer.slice(totalMessageLength); 
+
+                if (fullMessage.length < 12) { 
+                    console.warn(`[Cliente] Message too short (${fullMessage.length} bytes) to contain service name and status. Ignoring.`);
+                    continue; 
+                }
+
+                const serviceName = fullMessage.substring(5, 10).trim(); 
+                const status = fullMessage.substring(10, 12).trim(); 
+                const messageContent = fullMessage.substring(12);
+                if (responsePromise && responsePromise.resolve && responsePromise.reject && serviceName === responsePromise.serviceName) {
+
+                    try {
+                        const responseData = JSON.parse(messageContent);
+                        if (status === 'OK') {
+                            if (responseData && responseData.error) {
+                                responsePromise.reject(new Error(responseData.error));
+                            } else {
+                                responsePromise.resolve(responseData);
+                            }
+                        } else if (status === 'NK') { 
+                            const errorMessage = (responseData && responseData.error) ? responseData.error : messageContent;
+                            responsePromise.reject(new Error(`El bus/servicio ${serviceName} reportó un error (NK): ${errorMessage}`));
+                        } else {
+                            console.warn(`[Cliente] Message received with unknown status ('${status}') from service '${serviceName}'. Ignoring.`);
+                        }
+                    } catch (e) {
+                        responsePromise.reject(new Error(`Error al procesar respuesta JSON del servidor '${serviceName}': ${e.message}. Mensaje original: ${messageContent}`));
+                    }
+                } else {
+                    console.log(`[Cliente] -> Message received for service '${serviceName}' with status '${status}' but no matching promise pending. Ignoring.`);
+                }
+            }
+        });
+
+        clientSocket.on('close', () => {
+            console.log('\n[Cliente] Conexión cerrada.');
+            if (responsePromise && responsePromise.reject) {
+                responsePromise.reject(new Error("Conexión cerrada inesperadamente por el servidor."));
                 responsePromise = {};
             }
-        }
-    });
+            if (mongoose.connection.readyState === 1) mongoose.connection.close();
+            process.exit(0);
+        });
 
-    clientSocket.on('close', () => {
-        console.log('\n[Cliente] Conexión cerrada.');
-        if (mongoose.connection.readyState === 1) mongoose.connection.close();
-        process.exit(0);
-    });
+        clientSocket.on('error', (err) => {
+            console.error('\n❌ [Cliente] Error de conexión:', err.message);
+            if (responsePromise && responsePromise.reject) {
+                responsePromise.reject(new Error(`Error de conexión de socket: ${err.message}`));
+                responsePromise = {};
+            }
+            if (mongoose.connection.readyState === 1) mongoose.connection.close();
+            process.exit(1);
+        });
 
-    clientSocket.on('error', (err) => {
-        console.error('\n[Cliente] Error de conexión:', err.message);
-        if (mongoose.connection.readyState === 1) mongoose.connection.close();
+    } catch (error) {
+        console.error(`\n❌ Error durante la inicialización del cliente: ${error.message}`);
         process.exit(1);
-    });
+    }
 }
 
 async function mainMenu(inquirer) {
     try {
         const { userEmail } = await inquirer.prompt([{ type: 'input', name: 'userEmail', message: '👤 Introduce tu correo para gestionar el carrito:' }]);
+
         const usuario = await User.findOne({ correo: userEmail.toLowerCase().trim() });
+        
         if (!usuario) throw new Error(`Usuario '${userEmail}' no encontrado.`);
         
-        console.log(`✅ Bienvenido, ${usuario.correo}.`);
+        console.log(`✅ Bienvenido, ${usuario.correo}. Tienes ${usuario.asai_points} ASAIpoints.`);
 
         let exit = false;
         while (!exit) {
             const { action } = await inquirer.prompt([{
                 type: 'list', name: 'action', message: '¿Qué deseas hacer?',
-                choices: [ { name: '👀 Ver y Gestionar mi Carrito', value: 'view' }, new inquirer.Separator(), { name: '🚪 Salir', value: 'exit' } ]
+                choices: [ 
+                    { name: '🛒 Ver y Gestionar mi Carrito', value: 'view' }, 
+                    { name: '➕ Añadir un Producto al Carrito (Manual)', value: 'add' },
+                    { name: '🔍 Ver mis Órdenes Recientes', value: 'find_orders' }, 
+                    new inquirer.Separator(), 
+                    { name: '🚪 Salir', value: 'exit' } 
+                    ]
             }]);
 
             switch (action) {
@@ -116,22 +191,31 @@ async function mainMenu(inquirer) {
                         exit = true; 
                     }
                     break;
+                case 'find_orders': await runFindOrdersLogic(inquirer, usuario); break;
                 case 'exit': exit = true; break;
             }
         }
     } catch (error) {
-        console.error(`\n❌ Error: ${error.message}`);
+        console.error(`\n❌ Error en el menú principal: ${error.message}`);
     } finally {
         console.log("\n👋 ¡Hasta luego!");
-        clientSocket.end();
+        setTimeout(() => {
+            if (clientSocket && !clientSocket.destroyed) {
+                clientSocket.end();
+            }
+        }, 500); 
     }
 }
 
 async function runAddLogic(inquirer, userId) {
     try {
+        console.log('\n--- ➕ Añadir Producto al Carrito ---');
         const { producto_id } = await inquirer.prompt([{ type: 'input', name: 'producto_id', message: 'Introduce el ID del producto a añadir:' }]);
-        const { cantidad } = await inquirer.prompt([{ type: 'number', name: 'cantidad', message: 'Introduce la cantidad:', default: 1, validate: v => v > 0 || 'Debe ser > 0' }]);
-        await sendRequest('carro', { action: 'add', user_id: userId, producto_id: producto_id.trim(), cantidad });
+        const { cantidad } = await inquirer.prompt([{ type: 'number', name: 'cantidad', message: 'Introduce la cantidad:', default: 1, validate: v => v > 0 || 'Must be > 0' }]);
+        
+        console.log("Enviando solicitud al servicio 'carro' para añadir producto...");
+        await sendRequest('carro', { action: 'add', user_id: userId, producto_id: producto_id.trim(), cantidad: parseInt(cantidad, 10) });
+        
         console.log("✅ ¡Producto añadido al carrito!");
     } catch (error) {
         console.error(`\n❌ Error al añadir producto: ${error.message}`);
@@ -142,83 +226,204 @@ function displayCart(cart) {
     console.log("\n--- 🛒 Tu Carrito de Compras ---");
     if (!cart || !cart.items || cart.items.length === 0) {
         console.log("El carrito está vacío.");
-        return 0;
+        return { itemCount: 0, total: 0 };
     }
     let total = 0;
     const cartObj = cart.toObject ? cart.toObject() : cart;
+    
     cartObj.items.forEach((item, index) => {
         const subtotal = item.cantidad * item.precio_snapshot;
         total += subtotal;
-        console.log(`${index + 1}. ${item.nombre_snapshot}\n   Cantidad: ${item.cantidad} x $${item.precio_snapshot.toFixed(2)} = $${subtotal.toFixed(2)}`);
+        console.log(`${index + 1}. ${item.nombre_snapshot} (Var: ${item.talla}/${item.color})\n   Cantidad: ${item.cantidad} x $${item.precio_snapshot.toFixed(2)} = $${subtotal.toFixed(2)}`);
     });
     console.log("---------------------------------");
     console.log(`TOTAL DEL CARRITO: $${total.toFixed(2)}`);
-    return cartObj.items.length;
+    return { itemCount: cartObj.items.length, total: total };
 }
 
 async function manageCartMenu(inquirer, usuario) {
     let goBack = false;
-    let paymentSuccess = false;
-    while (!goBack) {
+    let paymentSuccess = false; 
+
+    while (!goBack && !paymentSuccess) {
         try {
+            console.log("Consultando carrito...");
             const cart = await sendRequest('carro', { action: 'view', user_id: usuario._id.toString() });
-            const itemCount = displayCart(cart);
+            const { itemCount, total: currentCartTotal } = displayCart(cart); 
 
             if (itemCount === 0) {
-                goBack = true;
+                console.log("No hay productos en el carrito para gestionar o pagar.");
+                goBack = true; 
                 continue;
             }
 
             const { cartAction } = await inquirer.prompt([{
                 type: 'list', name: 'cartAction', message: 'Opciones del carrito:',
                 choices: [
-                    { name: '💳 Proceder al Pago', value: 'pay' }, new inquirer.Separator(),
+                    { name: '💳 Proceder al Pago', value: 'pay', disabled: itemCount === 0 ? 'El carrito está vacío' : false }, 
+                    new inquirer.Separator(),
                     { name: '✏️ Modificar cantidad de un ítem', value: 'update' },
-                    { name: '❌ Eliminar un ítem', value: 'remove' }, new inquirer.Separator(),
+                    { name: '❌ Eliminar un ítem', value: 'remove' }, 
+                    new inquirer.Separator(),
                     { name: '↩️ Volver al menú principal', value: 'back' }
                 ]
             }]);
             
             if (cartAction === 'pay') {
-                if (!usuario.direcciones?.length) throw new Error("No tienes direcciones guardadas para el envío.");
-                if (!usuario.metodos_pago?.length) throw new Error("No tienes métodos de pago guardados.");
+                if (!usuario.direcciones?.length) throw new Error("No tienes direcciones guardadas para el envío. Por favor, añade una antes de proceder al pago.");
+                if (!usuario.metodos_pago?.length) throw new Error("No tienes métodos de pago guardados. Por favor, añade uno antes de proceder al pago.");
 
-                const { direccion_id } = await inquirer.prompt([{ type: 'list', name: 'direccion_id', message: '🚚 Selecciona la dirección de envío:', choices: usuario.direcciones.map(d => ({ name: `${d.nombre_direccion}: ${d.calle}`, value: d._id.toString() })) }]);
-                const { metodo_pago_id } = await inquirer.prompt([{ type: 'list', name: 'metodo_pago_id', message: '💳 Selecciona el método de pago:', choices: usuario.metodos_pago.map(p => ({ name: `${p.tipo} - ${p.detalle}`, value: p._id.toString() })) }]);
+                const dirChoices = usuario.direcciones.map(d => ({ name: `${d.nombre_direccion}: ${d.calle}, ${d.ciudad}, ${d.region || ''} CP:${d.codigo_postal}`, value: d._id.toString() }));
+                const metodoChoices = usuario.metodos_pago.map(p => ({ name: `${p.tipo} - ${p.detalle}`, value: p._id.toString() }));
 
-                console.log("Procesando pago...");
-                const ordenCreada = await sendRequest('pagos', { action: 'procesar_pago', payload: { user_id: usuario._id.toString(), direccion_id, metodo_pago_id } });
+
+                const { direccion_id } = await inquirer.prompt([{ type: 'list', name: 'direccion_id', message: '🚚 Selecciona la dirección de envío:', choices: dirChoices }]);
+                const { metodo_pago_id } = await inquirer.prompt([{ type: 'list', name: 'metodo_pago_id', message: '💳 Selecciona el método de pago:', choices: metodoChoices }]);
+
+                let pointsToUse = 0; 
+
+                if (usuario.asai_points > 0 && currentCartTotal > 0) {
+                    const maxPointsCanReduce = Math.floor(currentCartTotal / 1000); // Max points that can be applied without making total negative (each point discounts 1000)
+                    const effectiveMaxPoints = Math.min(usuario.asai_points, maxPointsCanReduce); // Max points the user has AND can apply without exceeding total
+
+                    if (effectiveMaxPoints > 0) {
+                        const { usePoints } = await inquirer.prompt([{
+                            type: 'confirm', name: 'usePoints', 
+                            message: `Tienes ${usuario.asai_points} ASAIpoints (equivalen a $${(usuario.asai_points * 1000).toFixed(2)}). ¿Deseas usar puntos para esta compra? (Máximo aplicable: ${effectiveMaxPoints} puntos / $${(effectiveMaxPoints * 1000).toFixed(2)})`, 
+                            default: true 
+                        }]);
+
+                        if (usePoints) {
+                            const { numPoints } = await inquirer.prompt([{
+                                type: 'number', name: 'numPoints', 
+                                message: `¿Cuántos puntos deseas usar? (Max ${effectiveMaxPoints})`, 
+                                default: effectiveMaxPoints, // Suggest using the max applicable by default
+                                validate: (input) => {
+                                    if (isNaN(input) || input < 0) return 'Introduce un número válido mayor o igual a 0.';
+                                     // Ensure no more points are used than available OR can be applied
+                                    if (input > effectiveMaxPoints) return `No puedes usar más de ${effectiveMaxPoints} puntos para esta compra.`;
+                                    return true;
+                                }
+                            }]);
+                             // Ensure pointsToUse is a non-negative integer
+                            pointsToUse = Math.max(0, parseInt(numPoints, 10) || 0); 
+                        }
+                    } else {
+                        console.log(`\nℹ️ Tienes ${usuario.asai_points} ASAIpoints, pero el total de $${currentCartTotal.toFixed(2)} no es suficiente para aplicar puntos.`);
+                    }
+                } else if (usuario.asai_points <= 0) {
+                    console.log('\nℹ️ No tienes ASAIpoints disponibles para usar.');
+                } else if (currentCartTotal <= 0) {
+                    console.log('\nℹ️ El total del carrito es $0, no se necesitan usar puntos.');
+                }
+                // --- End Logic to use ASAIpoints ---
+
+
+                console.log("\nProcesando pago...");
+
+                // Send the request to the 'pagos' service, including points to use (pointsToUse will be 0 if not used)
+                const ordenCreada = await sendRequest('pagos', { 
+                    action: 'procesar_pago', 
+                    payload: { 
+                        user_id: usuario._id.toString(), 
+                        direccion_id, 
+                        metodo_pago_id,
+                        pointsToUse: pointsToUse 
+                    } 
+                });
                 
                 console.log('\n✅ ¡PAGO EXITOSO! Se ha creado la siguiente orden:');
+                // Display the created order, which now includes final total_pago and points_used
                 console.log(JSON.stringify(ordenCreada, null, 2));
                 
-                paymentSuccess = true;
-                goBack = true;
-                continue;
-            }
+                paymentSuccess = true; // Mark success to exit the main menu loop
+                goBack = true; // Exit the cart menu
 
-            if (cartAction === 'back') { goBack = true; continue; }
-            
-            const cartObj = cart.toObject ? cart.toObject() : cart;
-            const { itemToModify } = await inquirer.prompt([{
-                type: 'list', name: 'itemToModify', message: `Selecciona el ítem a ${cartAction === 'update' ? 'modificar' : 'eliminar'}:`,
-                choices: cartObj.items.map((item, i) => ({ name: `${i + 1}. ${item.nombre_snapshot}`, value: item.producto_variacion_id }))
-            }]);
+                // Refresh user data after a payment action (points/cart)
+                // This is useful if you plan to continue in the main menu and display updated points
+                const updatedUsuario = await User.findById(usuario._id); // Fetch the updated user from DB
+                if(updatedUsuario) {
+                    usuario.asai_points = updatedUsuario.asai_points; // Update points in the local user object
+                    console.log(`\n✨ Tu nuevo saldo de ASAIpoints es: ${updatedUsuario.asai_points}`); // Log updated points
+                }
 
-            if (cartAction === 'update') {
-                const { newQty } = await inquirer.prompt([{ type: 'number', name: 'newQty', message: 'Ingresa la nueva cantidad:', validate: input => input > 0 || 'La cantidad debe ser > 0.' }]);
-                await sendRequest('carro', { action: 'update', user_id: usuario._id.toString(), producto_variacion_id: itemToModify, nueva_cantidad: newQty });
-                console.log("✅ Cantidad actualizada.");
-            } else if (cartAction === 'remove') {
-                await sendRequest('carro', { action: 'remove', user_id: usuario._id.toString(), producto_variacion_id: itemToModify });
-                console.log("✅ Ítem eliminado.");
+
+            } else if (cartAction === 'back') { 
+                goBack = true; 
+                continue; 
+            } else if (cartAction === 'update' || cartAction === 'remove') {
+                const cartObj = cart.toObject ? cart.toObject() : cart;
+                 // Ensure there are items to modify/remove
+                if (cartObj.items.length === 0) {
+                    console.log("No hay items en el carrito para realizar esta acción.");
+                    continue; // Return to cart menu
+                }
+
+                const { itemToModify } = await inquirer.prompt([{
+                    type: 'list', name: 'itemToModify', message: `Selecciona el ítem a ${cartAction === 'update' ? 'modificar' : 'eliminar'}:`,
+                     // Use producto_variacion_id as value to identify the item in the cart
+                    choices: cartObj.items.map((item, i) => ({ name: `${i + 1}. ${item.nombre_snapshot} (${item.cantidad} en carrito)`, value: item.producto_variacion_id.toString() }))
+                }]);
+
+                if (cartAction === 'update') {
+                    const { newQty } = await inquirer.prompt([{ 
+                        type: 'number', name: 'newQty', message: 'Ingresa la nueva cantidad:', 
+                        validate: input => {
+                            if (isNaN(input) || input <= 0) return 'La cantidad debe ser un número positivo.';
+                            return true;
+                        }
+                    }]);
+                     // Send update request to 'carro' service
+                    console.log("Enviando solicitud al servicio 'carro' para actualizar cantidad...");
+                    await sendRequest('carro', { action: 'update', user_id: usuario._id.toString(), producto_variacion_id: itemToModify, nueva_cantidad: parseInt(newQty, 10) });
+                    console.log("✅ Cantidad actualizada.");
+                } else if (cartAction === 'remove') {
+                     // Send remove request to 'carro' service
+                    console.log("Enviando solicitud al servicio 'carro' para eliminar ítem...");
+                    await sendRequest('carro', { action: 'remove', user_id: usuario._id.toString(), producto_variacion_id: itemToModify });
+                    console.log("✅ Ítem eliminado.");
+                }
             }
         } catch (error) {
-        console.error("\n❌ Error en la gestión del carrito:", error.message);
-        paymentSuccess = true; // Indica al menú principal que debe salir.
-        goBack = true; // Sale del menú del carrito.
+            console.error("\n❌ Error en la gestión del carrito:", error.message);
+            goBack = true; // Exit cart menu and return to main
+            paymentSuccess = false; // Ensure we don't exit main menu due to an error here
         }
     }
     return paymentSuccess;
 }
+
+// Function to find and display orders (copied from orderClient.js and adapted)
+async function runFindOrdersLogic(inquirer, usuario) {
+    try {
+        console.log('\n--- 🔍 Buscando Órdenes de Usuario 🔍 ---');
+        // We already have the user, use their ID or email directly
+        const email = usuario.correo.trim().toLowerCase();
+        const findRequest = { action: 'find_orders', payload: { email: email } };
+        
+        console.log("\nEnviando solicitud para buscar órdenes...");
+        // sendRequest expects the service to respond with Status+Payload
+        const responseData = await sendRequest('order', findRequest); 
+        
+        if (!responseData || responseData.length === 0) {
+            console.log("\n✅ No se encontraron órdenes recientes para este usuario.");
+        } else {
+            console.log(`\n✅ Se encontraron ${responseData.length} órdenes recientes:`);
+            responseData.forEach(orden => {
+                console.log("\n=============================================");
+                console.log(`  Orden ID:     ${orden._id}`);
+                console.log(`  Fecha:        ${new Date(orden.createdAt).toLocaleString('es-ES')}`);
+                console.log(`  Estado:       ${orden.estado}`);
+                console.log(`  Total Pagado: $${(orden.total_pago || 0).toLocaleString('es-ES')}`);
+                console.log(`  Puntos Usados: ${orden.points_used || 0}`); // Display points used
+                console.log(`  Nº de Items:  ${orden.itemCount}`);
+                console.log("=============================================");
+            });
+        }
+    } catch (error) {
+        console.error(`\n❌ Error al buscar órdenes: ${error.message}`);
+    }
+}
+
+
 startClient();
