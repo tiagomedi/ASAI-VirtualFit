@@ -93,17 +93,14 @@ async function procesarPago({ user_id, direccion_id, metodo_pago_id, pointsToUse
             productosAActualizar.push(usuario); 
 
         } else {
-            if (pointsToUse > 0) { 
-                console.warn(`[pagosLogic] Cliente ${user_id} solicitó descuento (${pointsToUse} pts), pero no cumple requisitos (puntos usuario: ${usuario.asai_points}, total sin descuento: ${totalPagoSinDescuento}). No se aplica descuento.`);
-            } else { 
-                console.log(`[pagosLogic] Cliente no solicitó usar el descuento de ${PUNTOS_PARA_DESCUENTO} puntos.`);
-            }
+            // Ya estamos en el caso donde pointsToUse > 0, pero no cumple requisitos
+            console.warn(`[pagosLogic] Cliente ${user_id} solicitó descuento (${pointsToUse} pts), pero no cumple requisitos (puntos usuario: ${usuario.asai_points}, total sin descuento: ${totalPagoSinDescuento}). No se aplica descuento.`);
         }
     } else {
-         // Cliente no pidió usar puntos (pointsToUse es 0)
+        // Cliente no pidió usar puntos (pointsToUse es 0)
         console.log(`[pagosLogic] Cliente no solicitó usar puntos. No se aplica descuento por puntos.`);
-         // totalPagoFinal ya está igual a totalPagoSinDescuento
-         puntosRealmenteUsados = 0; // Asegurarse de que sea 0
+        // totalPagoFinal ya está igual a totalPagoSinDescuento
+        puntosRealmenteUsados = 0; // Asegurarse de que sea 0
     }
     // --- Fin Lógica de ASAIpoints ---
 
