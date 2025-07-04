@@ -188,6 +188,7 @@ Para simular una compra dentro del ecosistema de Virtual Fit, se deben activar y
    - `orderService.js`
    - `pagosService.js`
    - `pointService.js`
+   - `cartService.js`
 
 2. **Ejecutar el Cliente de Compra**  
    Abre una terminal y ejecuta el siguiente comando:
