@@ -109,7 +109,29 @@ async function startService() {
                         
                         const requestData = JSON.parse(validJson);
                         if (requestData.action === 'send_email') {
-                            const resultado = await sendEmail(requestData.payload);
+                            // Extraer y mapear correctamente los datos del usuario
+                            const originalPayload = requestData.payload;
+                            
+                            // Extraer el correo del usuario del JSON
+                            const userEmail = originalPayload.to;
+                            if (!userEmail) {
+                                throw new Error('No se encontró el correo del usuario en el payload');
+                            }
+                            
+                            // Mapear a la estructura esperada por notif1Logic.js
+                            const mappedPayload = {
+                                to: userEmail,
+                                order: originalPayload.order || originalPayload.order_id || 'N/A',
+                                total: originalPayload.total || originalPayload.total_pagado || 0,
+                                items: originalPayload.items || (originalPayload.products ? originalPayload.products.length : 0)
+                            };
+                            
+                            console.log(`[${SERVICE_NAME}Service] ✉️ Enviando correo a: ${userEmail}`);
+                            console.log(`[${SERVICE_NAME}Service] 📋 Orden: ${mappedPayload.order}`);
+                            console.log(`[${SERVICE_NAME}Service] 💰 Total: $${mappedPayload.total}`);
+                            console.log(`[${SERVICE_NAME}Service] 📦 Items: ${mappedPayload.items}`);
+                            
+                            const resultado = await sendEmail(mappedPayload);
                             sendResponse(serviceSocket, resultado, clientId);
                         } else {
                             throw new Error(`Acción no reconocida: '${requestData.action}'`);

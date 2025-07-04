@@ -652,6 +652,94 @@ async function handleDeleteProductFromList(inquirer, adminUser, productos) {
     }
 }
 
+// Función para manejar notificaciones por correo
+async function handleNotifications(inquirer, loggedInUser) {
+    try {
+        console.log(`\n✅ Accediendo a notificaciones para ${loggedInUser.correo}!`);
+        
+        const { notificationAction } = await inquirer.prompt([{
+            type: 'list',
+            name: 'notificationAction',
+            message: '📧 ¿Qué tipo de correo deseas enviar?',
+            choices: [
+                { name: '📋 Correo de prueba', value: 'test' },
+                { name: '📦 Correo de confirmación de orden', value: 'order' },
+                new inquirer.Separator(),
+                { name: '↩️ Volver al menú principal', value: 'back' }
+            ]
+        }]);
+
+        if (notificationAction === 'back') return;
+
+        let emailPayload;
+
+        if (notificationAction === 'test') {
+            // Correo de prueba con datos ficticios
+            emailPayload = {
+                action: 'send_email',
+                payload: {
+                    to: loggedInUser.correo,
+                    order: 'PRUEBA-' + Date.now().toString().slice(-6),
+                    total: 99.99,
+                    items: 3
+                }
+            };
+            console.log(`\n📧 Enviando correo de prueba a: ${loggedInUser.correo}`);
+        } else if (notificationAction === 'order') {
+            // Buscar una orden real del usuario
+            const { connectDB } = require('../../database/db.js');
+            const Order = require('../../database/models/order.model.js');
+            await connectDB();
+            
+            // Buscar órdenes del usuario
+            const userOrders = await Order.find({ user_id: loggedInUser._id }).sort({ createdAt: -1 }).limit(5);
+            
+            if (userOrders.length === 0) {
+                console.log('\n❌ No tienes órdenes registradas para enviar por correo.');
+                await inquirer.prompt([{ type: 'list', name: 'continue', message: 'Presiona Enter para continuar.', choices: ['Ok'] }]);
+                return;
+            }
+
+            const orderChoices = userOrders.map(order => ({
+                name: `Orden ${order._id.toString().slice(-6)} - $${order.total_pago} - ${order.estado} - ${new Date(order.createdAt).toLocaleDateString()}`,
+                value: order._id.toString()
+            }));
+
+            const { selectedOrder } = await inquirer.prompt([{
+                type: 'list',
+                name: 'selectedOrder',
+                message: 'Selecciona la orden para enviar por correo:',
+                choices: orderChoices
+            }]);
+
+            const orderData = userOrders.find(o => o._id.toString() === selectedOrder);
+            
+            emailPayload = {
+                action: 'send_email',
+                payload: {
+                    to: loggedInUser.correo,
+                    order: orderData._id.toString().slice(-6),
+                    total: orderData.total_pago,
+                    items: orderData.items.length
+                }
+            };
+            console.log(`\n📧 Enviando correo de confirmación de orden a: ${loggedInUser.correo}`);
+        }
+
+        // Enviar solicitud al servicio de notificaciones
+        const response = await sendRequestAndWait('notif', emailPayload);
+        
+        console.log('\n✅ ¡ÉXITO! Correo enviado correctamente:');
+        console.log(`📧 Destinatario: ${emailPayload.payload.to}`);
+        console.log(`📋 Orden: ${emailPayload.payload.order}`);
+        console.log(`💰 Total: $${emailPayload.payload.total}`);
+        console.log(`📦 Items: ${emailPayload.payload.items}`);
+        
+    } catch (error) {
+        console.error(`\n❌ Error al enviar correo: ${error.message}`);
+    }
+}
+
 // --- Función Principal ---
 
 async function run() {
@@ -717,6 +805,7 @@ async function handleMainMenu(inquirer, loggedInUser) {
                     { name: '🛒 Gestionar Carrito', value: 'cart' },
                     { name: '📦 Ver Órdenes', value: 'orders' },
                     { name: '✍️ Crear Reseña', value: 'review' },
+                    { name: '📧 Enviar Correo de Confirmación', value: 'notifications' },
                     { name: '👤 Gestionar Perfil', value: 'profile' },
                     new inquirer.Separator(),
                     { name: '🚪 Salir', value: 'exit' }
@@ -739,6 +828,9 @@ async function handleMainMenu(inquirer, loggedInUser) {
                 break;
             case 'review':
                 await startReviewClient(loggedInUser);
+                break;
+            case 'notifications':
+                await handleNotifications(inquirer, loggedInUser);
                 break;
             case 'profile':
                 await startProfileClient(loggedInUser);
