@@ -19,42 +19,62 @@ function sendMessage(socket, serviceName, data) {
     socket.write(fullMessage);
 }
 
-// Función principal que controla el flujo de ejecución
-async function startClient() {
-    // 1. Conectar a la DB para obtener datos para las preguntas
-    await connectDB();
-    console.log('[ReseñaCliente] Conectado a la base de datos.');
-    // 2. Iniciar la lógica interactiva
-    await runInteractiveLogic();
-    // Asegurar que la conexión DB se cierra después de que la lógica interactiva termine
-    if (mongoose.connection.readyState === 1) {
-        mongoose.connection.close();
-        console.log('[ReseñaCliente] Conexión a la base de datos cerrada.');
+// Función para mostrar menú después de crear reseña
+async function showPostReviewMenu(inquirer) {
+    const { nextAction } = await inquirer.prompt([{
+        type: 'list',
+        name: 'nextAction',
+        message: '¿Qué deseas hacer ahora?',
+        choices: [
+            { name: '✍️ Crear otra reseña', value: 'another' },
+            new inquirer.Separator(),
+            { name: '↩️ Volver al menú principal', value: 'main_menu' }
+        ]
+    }]);
+
+    if (nextAction === 'another') {
+        console.log('\n--- 📝 Funcionalidad de otra reseña no implementada ---');
+        console.log('Regresando al menú principal...');
+    }
+    // En cualquier caso, regresamos al menú principal
+}
+
+// Función principal exportada que recibe el usuario logueado
+async function startReviewClient(loggedInUser) {
+    try {
+        // 1. Conectar a la DB para obtener datos para las preguntas
+        await connectDB();
+        console.log('[ReseñaCliente] Conectado a la base de datos.');
+        // 2. Iniciar la lógica interactiva con el usuario logueado
+        await runInteractiveLogic(loggedInUser);
+        // Asegurar que la conexión DB se cierra después de que la lógica interactiva termine
+        if (mongoose.connection.readyState === 1) {
+            mongoose.connection.close();
+            console.log('[ReseñaCliente] Conexión a la base de datos cerrada.');
+        }
+    } catch (error) {
+        console.error(`\n❌ Error en el cliente de reseñas: ${error.message}`);
+        if (mongoose.connection.readyState === 1) {
+            mongoose.connection.close();
+        }
     }
 }
 
-// Función que maneja toda la interacción con el usuario
-async function runInteractiveLogic() {
+// Función que maneja toda la interacción con el usuario logueado
+async function runInteractiveLogic(loggedInUser) {
     const inquirer = (await import('inquirer')).default;
 
     try {
         console.log('\n--- ✍️ Asistente para Crear Nueva Reseña ✍️ ---');
+        console.log(`✅ Creando reseña para ${loggedInUser.correo}!`);
 
-        // --- PASO 1: Identificar al Usuario ---
-        const { userEmail } = await inquirer.prompt([{ type: 'input', name: 'userEmail', message: '👤 Introduce el correo del usuario:' }]);
-        const usuario = await User.findOne({ correo: userEmail.toLowerCase().trim() });
-        if (!usuario) {
-            throw new Error(`Usuario con correo '${userEmail}' no encontrado.`);
-        }
-        console.log(`✅ Usuario encontrado: ${usuario.correo}`);
-
-        // --- PASO 2: Mostrar Pedidos y Seleccionar Producto para Reseñar ---
+        // --- PASO 1: Mostrar Pedidos y Seleccionar Producto para Reseñar ---
         // Obtenemos las órdenes del usuario. Necesitamos los IDs de producto y variación de los ITEMS.
         // No populamos el producto entero aquí, solo listamos lo que hay en la orden.
-        const orders = await Order.find({ user_id: usuario._id }).sort({ createdAt: -1 });
+        const orders = await Order.find({ user_id: loggedInUser._id }).sort({ createdAt: -1 });
 
         if (!orders || orders.length === 0) {
-            throw new Error("El usuario no tiene pedidos realizados.");
+            throw new Error("No tienes pedidos realizados.");
         }
 
         console.log('\n--- 📜 Tus Pedidos ---');
@@ -91,7 +111,7 @@ async function runInteractiveLogic() {
         const selectedItem = itemDetailsMap.get(selectedItemKey);
         console.log(`✅ Producto seleccionado para reseñar: ${selectedItem.productName}`);
 
-        // --- PASO 3: Capturar la Reseña ---
+        // --- PASO 2: Capturar la Reseña ---
         console.log('\n--- ✨ Tu Reseña ---');
         const { puntuacion } = await inquirer.prompt([{
             type: 'number',
@@ -107,10 +127,9 @@ async function runInteractiveLogic() {
             message: '💬 Comentario (opcional):'
         }]);
 
-
-        // --- PASO 4: Construir y Enviar la Solicitud al Servicio Reseña ---
+        // --- PASO 3: Construir y Enviar la Solicitud al Servicio Reseña ---
         const reviewRequest = {
-            user_id: usuario._id.toString(),
+            user_id: loggedInUser._id.toString(),
             product_id: selectedItem.productId, // ID del producto maestro
             product_variation_id: selectedItem.variationId, // ID de la variación comprada (de la orden)
             puntuacion: puntuacion,
@@ -123,60 +142,69 @@ async function runInteractiveLogic() {
             sendMessage(clientSocket, SERVICE_TO_CALL, JSON.stringify(reviewRequest));
         });
 
-        // --- PASO 5: Manejar la Respuesta del Servicio ---
-        clientSocket.on('data', (data) => {
-            const rawData = data.toString();
-            console.log(`\n[ReseñaCliente] <- Respuesta cruda recibida: ${rawData}`);
+        // --- PASO 4: Manejar la Respuesta del Servicio ---
+        await new Promise((resolve, reject) => {
+            clientSocket.on('data', (data) => {
+                const rawData = data.toString();
+                console.log(`\n[ReseñaCliente] <- Respuesta cruda recibida: ${rawData}`);
 
-            // El formato esperado de respuesta del bus es NNNNNSSSSS[OK/NK][DATOS_JSON]
-            // Leemos los primeros 5 del header, luego 5 del service name, luego 2 del status.
-            const serviceName = rawData.substring(5, 10).trim();
-            const status = rawData.substring(10, 12).trim(); // 'OK' o 'NK'
-            const message = rawData.substring(12); // El resto es el payload JSON
+                // El formato esperado de respuesta del bus es NNNNNSSSSS[OK/NK][DATOS_JSON]
+                // Leemos los primeros 5 del header, luego 5 del service name, luego 2 del status.
+                const serviceName = rawData.substring(5, 10).trim();
+                const status = rawData.substring(10, 12).trim(); // 'OK' o 'NK'
+                const message = rawData.substring(12); // El resto es el payload JSON
 
-            console.log(`[ReseñaCliente] Respuesta de '${serviceName}' | Estado: ${status}`);
+                console.log(`[ReseñaCliente] Respuesta de '${serviceName}' | Estado: ${status}`);
 
-            if (status === 'OK') {
-                try {
-                    // El 'message' debería ser el JSON payload enviado por reseñaService
-                    const responseData = JSON.parse(message);
+                if (status === 'OK') {
+                    try {
+                        // El 'message' debería ser el JSON payload enviado por reseñaService
+                        const responseData = JSON.parse(message);
 
-                    // Verificamos si el JSON que recibimos es un error reportado por la lógica del servicio o un éxito
-                    if (responseData.status === 'error') {
-                        console.error(`❌ Error reportado por el servicio '${SERVICE_TO_CALL}': ${responseData.message}`);
-                    } else {
-                        console.log('✅ ¡ÉXITO! Reseña procesada correctamente:');
-                        console.log(JSON.stringify(responseData, null, 2)); // Imprimimos la respuesta exitosa
+                        // Verificamos si el JSON que recibimos es un error reportado por la lógica del servicio o un éxito
+                        if (responseData.status === 'error') {
+                            console.error(`❌ Error reportado por el servicio '${SERVICE_TO_CALL}': ${responseData.message}`);
+                        } else {
+                            console.log('✅ ¡ÉXITO! Reseña procesada correctamente:');
+                            console.log(JSON.stringify(responseData, null, 2)); // Imprimimos la respuesta exitosa
+                        }
+
+                    } catch (e) {
+                        console.error("[ReseñaCliente] Error al parsear la respuesta JSON del servicio:", e.message);
+                        console.error("Respuesta recibida:", message); // Mostrar el mensaje crudo que falló el parseo
                     }
-
-                } catch (e) {
-                    console.error("[ReseñaCliente] Error al parsear la respuesta JSON del servicio:", e.message);
-                    console.error("Respuesta recibida:", message); // Mostrar el mensaje crudo que falló el parseo
+                } else { // 'NK' del bus - indica un problema en el bus o el servicio no respondió a tiempo
+                    console.error(`❌ El bus reportó un error (NK) al llamar a '${SERVICE_TO_CALL}': ${message}`);
                 }
-            } else { // 'NK' del bus - indica un problema en el bus o el servicio no respondió a tiempo
-                console.error(`❌ El bus reportó un error (NK) al llamar a '${SERVICE_TO_CALL}': ${message}`);
-            }
-            clientSocket.end(); // Cerrar conexión después de recibir respuesta
+                
+                clientSocket.end(); // Cerrar conexión después de recibir respuesta
+                resolve(); // Resolver la promesa para continuar
+            });
+
+            clientSocket.on('close', () => {
+                console.log('[ReseñaCliente] Conexión al bus cerrada.');
+                resolve(); // Resolver la promesa aunque se cierre la conexión
+            });
+
+            clientSocket.on('error', (err) => {
+                console.error('[ReseñaCliente] Error de conexión al bus:', err.message);
+                clientSocket.destroy();
+                resolve(); // Resolver la promesa aunque haya error
+            });
         });
 
-        clientSocket.on('close', () => {
-            console.log('[ReseñaCliente] Conexión al bus cerrada.');
-            // La conexión DB se cierra en startClient
-        });
-
-        clientSocket.on('error', (err) => {
-            console.error('[ReseñaCliente] Error de conexión al bus:', err.message);
-            // La conexión DB se cierra en startClient
-            // Asegurarse de cerrar el socket si hay un error de conexión
-            clientSocket.destroy();
-        });
+        // Mostrar menú después de completar la operación
+        await showPostReviewMenu(inquirer);
 
     } catch (error) {
         console.error("\n❌ Ha ocurrido un error en el cliente:", error.message);
-    } finally {
-        // El cierre de DB se maneja en startClient o en los handlers de socket/error.
-        // No necesitamos cerrar aquí si startClient lo hace.
     }
 }
 
-startClient();
+// Exportar la función principal
+module.exports = { startReviewClient };
+
+// Solo ejecutar directamente si es llamado como script principal
+if (require.main === module) {
+    oldStartClient();
+}

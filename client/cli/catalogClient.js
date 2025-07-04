@@ -335,7 +335,106 @@ async function manageCatalogView(inquirer, userId) {
     }
 }
 
-async function main() {
+// Función principal exportada que recibe el usuario logueado
+async function startCatalogClient(loggedInUser) {
+    try {
+        const inquirer = (await import('inquirer')).default;
+        console.log(`\n✅ Accediendo al catálogo como ${loggedInUser.correo}!`);
+        
+        let exit = false;
+        while (!exit) {
+            const { mainMenuAction } = await inquirer.prompt([{ type: 'list', name: 'mainMenuAction', message: '🔭 ¿Qué deseas hacer?', choices: [{ name: '📚 Ver Catálogo/Buscar/Filtrar', value: 'catalog' }, { name: '💖 Ver mi Lista de Deseos', value: 'wishlist' }, new inquirer.Separator(), { name: '🚪 Volver al menú principal', value: 'exit' }] }]);
+            
+            if (mainMenuAction === 'exit') { 
+                exit = true; 
+                continue; 
+            }
+            
+            if (mainMenuAction === 'wishlist') { 
+                await manageWishlist(inquirer, loggedInUser._id.toString()); 
+                continue; 
+            }
+            
+            const { catalogAction } = await inquirer.prompt([{ type: 'list', name: 'catalogAction', message: 'Acciones del catálogo:', choices: [{ name: '📚 Ver Catálogo Completo (Paginado)', value: 'list' }, { name: '🔍 Buscar un producto', value: 'search' }, { name: '📊 Aplicar Filtros', value: 'filter' }] }]);
+            
+            if (catalogAction === 'list') {
+                await manageCatalogView(inquirer, loggedInUser._id.toString());
+            } else {
+                let products;
+                if(catalogAction === 'search') {
+                    const { term } = await inquirer.prompt([{ type: 'input', name: 'term', message: 'Ingresa término a buscar:' }]);
+                    try {
+                        products = await sendRequest('catal', { action: 'search', term });
+                        console.log(`\n🔍 Búsqueda realizada para: "${term}"`);
+                    } catch (error) {
+                        console.error(`\n❌ Error en la búsqueda: ${error.message}`);
+                        continue;
+                    }
+                } else if (catalogAction === 'filter') {
+                    console.log('\n📊 Configurar filtros de búsqueda:');
+                    
+                    const filterQuestions = [
+                        { type: 'input', name: 'marca', message: 'Filtrar por marca (opcional):' },
+                        { type: 'input', name: 'categoria', message: 'Filtrar por categoría (opcional):' },
+                        { type: 'input', name: 'color', message: 'Filtrar por color (opcional):' },
+                        { type: 'input', name: 'talla', message: 'Filtrar por talla (opcional):' },
+                        { type: 'input', name: 'precio_min', message: 'Precio mínimo (opcional):' },
+                        { type: 'input', name: 'precio_max', message: 'Precio máximo (opcional):' },
+                        { type: 'confirm', name: 'solo_disponibles', message: '¿Solo productos disponibles en stock?', default: false }
+                    ];
+                    
+                    const filterAnswers = await inquirer.prompt(filterQuestions);
+                    
+                    // Construir criterios de filtro
+                    const criteria = {};
+                    if (filterAnswers.marca && filterAnswers.marca.trim()) criteria.marca = filterAnswers.marca.trim();
+                    if (filterAnswers.categoria && filterAnswers.categoria.trim()) criteria.categoria = filterAnswers.categoria.trim();
+                    if (filterAnswers.color && filterAnswers.color.trim()) criteria.color = filterAnswers.color.trim();
+                    if (filterAnswers.talla && filterAnswers.talla.trim()) criteria.talla = filterAnswers.talla.trim();
+                    if (filterAnswers.precio_min && filterAnswers.precio_min.trim()) {
+                        const precioMin = parseFloat(filterAnswers.precio_min);
+                        if (!isNaN(precioMin)) criteria.precio_min = precioMin;
+                    }
+                    if (filterAnswers.precio_max && filterAnswers.precio_max.trim()) {
+                        const precioMax = parseFloat(filterAnswers.precio_max);
+                        if (!isNaN(precioMax)) criteria.precio_max = precioMax;
+                    }
+                    if (filterAnswers.solo_disponibles) criteria.solo_disponibles = true;
+                    
+                    // Verificar si se aplicó algún filtro
+                    if (Object.keys(criteria).length === 0) {
+                        console.log('\n⚠️  No se aplicaron filtros. Mostrando todos los productos...');
+                        products = await sendRequest('catal', { action: 'list_all', page: 1, limit: 20 });
+                        products = products.products || [];
+                    } else {
+                        try {
+                            products = await sendRequest('catal', { action: 'filter', criteria });
+                            console.log(`\n📊 Filtros aplicados: ${Object.keys(criteria).join(', ')}`);
+                        } catch (error) {
+                            console.error(`\n❌ Error en el filtrado: ${error.message}`);
+                            continue;
+                        }
+                    }
+                }
+                
+                if (products) {
+                    displayProducts(products, catalogAction === 'search' ? "Resultados de Búsqueda" : "Resultados de Filtro");
+                    if (products.length > 0) {
+                        await productActionMenu(inquirer, products, loggedInUser._id.toString());
+                    } else {
+                        console.log('\n💡 Sugerencia: Intenta con términos más generales o menos filtros.');
+                        await inquirer.prompt([{ type: 'list', name: 'continue', message: 'Presiona Enter para continuar.', choices: ['Ok'] }]);
+                    }
+                }
+            }
+        }
+    } catch (error) { 
+        console.error(`\n❌ Error en el cliente de catálogo: ${error.message}`);
+    }
+}
+
+// Función antigua main que ya no se usa
+async function oldMain() {
     await connectDB();
     const inquirer = (await import('inquirer')).default;
     let currentUser = null;
@@ -432,4 +531,10 @@ async function main() {
     }
 }
 
-main();
+// Exportar la función principal
+module.exports = { startCatalogClient };
+
+// Solo ejecutar directamente si es llamado como script principal
+if (require.main === module) {
+    oldMain();
+}

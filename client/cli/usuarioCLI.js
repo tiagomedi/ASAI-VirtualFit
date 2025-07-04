@@ -1,6 +1,13 @@
 const net = require('net');
 const { v4: uuidv4 } = require('uuid');
 
+// Imports para los otros clientes
+const { startCartClient } = require('./cartClient.js');
+const { startCatalogClient } = require('./catalogClient.js');
+const { startProfileClient } = require('./cliCliente.js');
+const { startOrderClient } = require('./orderClient.js');
+const { startReviewClient } = require('./reseñaClient.js');
+
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
 const CLIENT_ID = uuidv4().substring(0, 5);
@@ -364,12 +371,26 @@ async function handleAdminTasks(inquirer, adminUser) {
 }
 
 async function handleAsaiChat(inquirer, user) {
-    console.log('\n--- Charlando con ASAI (escribe "salir" para terminar) ---');
-    console.log('PREGUNTAS SUGERIDAS: \n"buscar zapatillas", "mostrar productos nike", "tienes algo de color azul", "muéstrame poleras adidas", \n"estado de mi pedido", "mostrar precios entre (precio min) y (precio max)"\n');
+    console.log('\n--- Charlando con ASAI (escribe "salir", "exit" o "quit" para terminar) ---');
+    console.log('💡 COMANDOS DISPONIBLES:');
+    console.log('   • "ayuda" o "help" - Mostrar todos los comandos');
+    console.log('   • "buscar zapatillas" - Buscar productos específicos');
+    console.log('   • "mostrar productos nike" - Buscar por marca');
+    console.log('   • "tienes algo de color azul" - Buscar por color');
+    console.log('   • "muéstrame poleras adidas" - Combinar tipo y marca');
+    console.log('   • "estado de mi pedido" - Ver estado del último pedido');
+    console.log('   • "mostrar precios entre 100 y 500" - Buscar por rango de precio');
+    console.log('   • "salir", "exit" o "quit" - Terminar conversación\n');
 
     while (true) {
         const { consulta } = await inquirer.prompt([{ type: 'input', name: 'consulta', message: 'Tú:' }]);
-        if (consulta.trim().toLowerCase() === 'salir') break;
+        const consultaLower = consulta.trim().toLowerCase();
+        
+        // Comandos de salida
+        if (consultaLower === 'salir' || consultaLower === 'exit' || consultaLower === 'quit') {
+            console.log('👋 ¡Hasta luego! Volviendo al menú principal...');
+            break;
+        }
 
         try {
             const response = await sendRequestAndWait('asais', { userId: user._id, query: consulta });
@@ -672,23 +693,59 @@ async function run() {
         if (loggedInUser.rol === 'admin') {
             await handleAdminTasks(inquirer, loggedInUser);
         } else {
-            const { clientAction } = await inquirer.prompt([
-                {
-                    type: 'list',
-                    name: 'clientAction',
-                    message: 'Menú de Cliente:',
-                    choices: ['Charlar con ASAI', 'Salir'],
-                },
-            ]);
-            if (clientAction === 'Charlar con ASAI') {
-                await handleAsaiChat(inquirer, loggedInUser);
-            }
+            await handleMainMenu(inquirer, loggedInUser);
         }
     } catch (error) {
         console.error('\n❌ Error crítico en el flujo principal:', error.message);
     } finally {
         if (!clientSocket.destroyed) clientSocket.destroy();
         console.log('\n[Cliente] Proceso finalizado.');
+    }
+}
+
+// Nueva función para manejar el menú principal de cliente
+async function handleMainMenu(inquirer, loggedInUser) {
+    while (true) {
+        const { clientAction } = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'clientAction',
+                message: 'Menú Principal - ¿Qué deseas hacer?',
+                choices: [
+                    { name: '🤖 Charlar con ASAI', value: 'asai' },
+                    { name: '📚 Ver Catálogo y Lista de Deseos', value: 'catalog' },
+                    { name: '🛒 Gestionar Carrito', value: 'cart' },
+                    { name: '📦 Ver Órdenes', value: 'orders' },
+                    { name: '✍️ Crear Reseña', value: 'review' },
+                    { name: '👤 Gestionar Perfil', value: 'profile' },
+                    new inquirer.Separator(),
+                    { name: '🚪 Salir', value: 'exit' }
+                ],
+            },
+        ]);
+
+        switch (clientAction) {
+            case 'asai':
+                await handleAsaiChat(inquirer, loggedInUser);
+                break;
+            case 'catalog':
+                await startCatalogClient(loggedInUser);
+                break;
+            case 'cart':
+                await startCartClient(loggedInUser);
+                break;
+            case 'orders':
+                await startOrderClient(loggedInUser);
+                break;
+            case 'review':
+                await startReviewClient(loggedInUser);
+                break;
+            case 'profile':
+                await startProfileClient(loggedInUser);
+                break;
+            case 'exit':
+                return;
+        }
     }
 }
 

@@ -12,7 +12,7 @@ function header(n) { return String(n).padStart(5, '0'); }
 function sendResponse(socket, data) {
     const service = SERVICE_NAME.padEnd(5, ' ');
     const payload = JSON.stringify(data);
-    const fullMessage = header(service.length + 2 + payload.length) + service + 'OK' + payload;
+    const fullMessage = header(service.length + payload.length) + service + payload;
     console.log(`[${SERVICE_NAME}Service] -> Enviando respuesta OK`);
     socket.write(fullMessage);
 }
@@ -20,7 +20,7 @@ function sendResponse(socket, data) {
 function sendError(socket, errorMessage) {
     const service = SERVICE_NAME.padEnd(5, ' ');
     const payload = JSON.stringify({ error: errorMessage });
-    const fullMessage = header(service.length + 2 + payload.length) + service + 'NK' + payload;
+    const fullMessage = header(service.length + payload.length) + service + payload;
     console.error(`❌ [${SERVICE_NAME}Service] -> Enviando ERROR (NK): ${errorMessage}`);
     socket.write(fullMessage);
 }

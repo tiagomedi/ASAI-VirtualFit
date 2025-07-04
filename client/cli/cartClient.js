@@ -64,27 +64,12 @@ function sendRequest(requestPayload) {
     });
 }
 
-async function startClient() {
+// Función principal exportada que recibe el usuario logueado
+async function startCartClient(loggedInUser) {
     try {
-        await connectDB();
         const inquirer = (await import('inquirer')).default;
-        await mainMenu(inquirer);
-    } catch (error) {
-        console.error(`\n❌ Error durante la inicialización del cliente: ${error.message}`);
-        process.exit(1);
-    }
-}
-
-async function mainMenu(inquirer) {
-    try {
-        const { userEmail } = await inquirer.prompt([{ type: 'input', name: 'userEmail', message: '👤 Introduce tu correo para gestionar el carrito:' }]);
-
-        const usuario = await User.findOne({ correo: userEmail.toLowerCase().trim() });
+        console.log(`✅ Accediendo al carrito de ${loggedInUser.correo}. Tienes ${loggedInUser.asai_points} ASAIpoints.`);
         
-        if (!usuario) throw new Error(`Usuario '${userEmail}' no encontrado.`);
-        
-        console.log(`✅ Bienvenido, ${usuario.correo}. Tienes ${usuario.asai_points} ASAIpoints.`);
-
         let exit = false;
         while (!exit) {
             const { action } = await inquirer.prompt([{
@@ -92,13 +77,13 @@ async function mainMenu(inquirer) {
                 choices: [ 
                     { name: '🛒 Ver y Gestionar mi Carrito', value: 'view' }, 
                     new inquirer.Separator(), 
-                    { name: '🚪 Salir', value: 'exit' } 
+                    { name: '🚪 Volver al menú principal', value: 'exit' } 
                 ]
             }]);
 
             switch (action) {
                 case 'view': 
-                    const paymentSuccess = await manageCartMenu(inquirer, usuario);
+                    const paymentSuccess = await manageCartMenu(inquirer, loggedInUser);
                     if (paymentSuccess) {
                         exit = true; 
                     }
@@ -109,11 +94,7 @@ async function mainMenu(inquirer) {
             }
         }
     } catch (error) {
-        console.error(`\n❌ Error en el menú principal: ${error.message}`);
-    } finally {
-        console.log("\n👋 ¡Hasta luego!");
-        if (mongoose.connection.readyState === 1) mongoose.connection.close();
-        process.exit(0);
+        console.error(`\n❌ Error en el cliente de carrito: ${error.message}`);
     }
 }
 
@@ -359,4 +340,64 @@ async function manageCartMenu(inquirer, usuario) {
     return paymentSuccess;
 }
 
-startClient();
+// Función antigua que ya no se usa
+async function oldStartClient() {
+    try {
+        await connectDB();
+        const inquirer = (await import('inquirer')).default;
+        await mainMenu(inquirer);
+    } catch (error) {
+        console.error(`\n❌ Error durante la inicialización del cliente: ${error.message}`);
+        process.exit(1);
+    }
+}
+
+async function mainMenu(inquirer) {
+    try {
+        const { userEmail } = await inquirer.prompt([{ type: 'input', name: 'userEmail', message: '👤 Introduce tu correo para gestionar el carrito:' }]);
+
+        const usuario = await User.findOne({ correo: userEmail.toLowerCase().trim() });
+        
+        if (!usuario) throw new Error(`Usuario '${userEmail}' no encontrado.`);
+        
+        console.log(`✅ Bienvenido, ${usuario.correo}. Tienes ${usuario.asai_points} ASAIpoints.`);
+
+        let exit = false;
+        while (!exit) {
+            const { action } = await inquirer.prompt([{
+                type: 'list', name: 'action', message: '¿Qué deseas hacer?',
+                choices: [ 
+                    { name: '🛒 Ver y Gestionar mi Carrito', value: 'view' }, 
+                    new inquirer.Separator(), 
+                    { name: '🚪 Salir', value: 'exit' } 
+                ]
+            }]);
+
+            switch (action) {
+                case 'view': 
+                    const paymentSuccess = await manageCartMenu(inquirer, usuario);
+                    if (paymentSuccess) {
+                        exit = true; 
+                    }
+                    break;
+                case 'exit': 
+                    exit = true; 
+                    break;
+            }
+        }
+    } catch (error) {
+        console.error(`\n❌ Error en el menú principal: ${error.message}`);
+    } finally {
+        console.log("\n👋 ¡Hasta luego!");
+        if (mongoose.connection.readyState === 1) mongoose.connection.close();
+        process.exit(0);
+    }
+}
+
+// Exportar la función principal
+module.exports = { startCartClient };
+
+// Solo ejecutar directamente si es llamado como script principal
+if (require.main === module) {
+    oldStartClient();
+}

@@ -4,7 +4,6 @@ const inquirer = require('inquirer').default;
 
 const PERFIL_HOST = 'localhost';
 const PERFIL_PORT = 5010;
-let correoAutenticado = null;
 
 console.log(`Conectando al servicio de perfil en ${PERFIL_HOST}:${PERFIL_PORT}…`);
 
@@ -53,8 +52,19 @@ async function enviarPeticionDirecta(request) {
   });
 }
 
+// Función principal exportada que recibe el usuario logueado
+async function startProfileClient(loggedInUser) {
+  try {
+    console.log(`\n✅ Accediendo al perfil de ${loggedInUser.correo}!`);
+    await mostrarMenu(loggedInUser.correo);
+  } catch (error) {
+    console.error(`\n❌ Error en el cliente de perfil: ${error.message}`);
+  }
+}
+
 /* ---------------------  Función para autenticar correo  --------------- */
 async function autenticarCorreo() {
+  let correoAutenticado = null;
   while (!correoAutenticado) {
     const { correo } = await inquirer.prompt({
       type: 'input',
@@ -77,7 +87,7 @@ async function autenticarCorreo() {
       if (response.status === 'success') {
         correoAutenticado = correo.trim().toLowerCase();
         console.log(`✅ Usuario autenticado correctamente: ${correoAutenticado}`);
-        return;
+        return correoAutenticado;
       } else {
         console.log(`❌ Error: ${response.message}`);
       }
@@ -85,10 +95,11 @@ async function autenticarCorreo() {
       console.log(`❌ Error de conexión: ${error.message}`);
     }
   }
+  return correoAutenticado;
 }
 
 /* ---------------------  Función para ver perfil  --------------------- */
-async function verPerfil() {
+async function verPerfil(correoAutenticado) {
   try {
     console.log('📋 Obteniendo información del perfil...');
     const response = await enviarPeticionDirecta({
@@ -126,7 +137,7 @@ async function verPerfil() {
 }
 
 /* ---------------------  Función para agregar dirección  --------------- */
-async function agregarDireccion() {
+async function agregarDireccion(correoAutenticado) {
   try {
     const direccion = await inquirer.prompt([
       { name: 'nombre_direccion', message: '🏷️  Nombre de la dirección:' },
@@ -154,7 +165,7 @@ async function agregarDireccion() {
 }
 
 /* ---------------------  Función para agregar método de pago  ---------- */
-async function agregarMetodoPago() {
+async function agregarMetodoPago(correoAutenticado) {
   try {
     const metodoPago = await inquirer.prompt([
       { 
@@ -185,7 +196,7 @@ async function agregarMetodoPago() {
 }
 
 /* ----------------------  Menú interactivo  ---------------------------- */
-async function mostrarMenu() {
+async function mostrarMenu(correoAutenticado) {
   while (true) {
     console.log('\n' + '='.repeat(50));
     console.log(`👤 Usuario: ${correoAutenticado}`);
@@ -200,24 +211,26 @@ async function mostrarMenu() {
         { name: '🏠 Agregar dirección', value: 'direccion' },
         { name: '💳 Agregar método de pago', value: 'pago' },
         { name: '🔄 Cambiar usuario', value: 'cambiar' },
+        { name: '↩️ Volver al menú principal', value: 'volver' },
         { name: '❌ Salir', value: 'salir' }
       ]
     });
     
     switch (opcion) {
       case 'ver':
-        await verPerfil();
+        await verPerfil(correoAutenticado);
         break;
       case 'direccion':
-        await agregarDireccion();
+        await agregarDireccion(correoAutenticado);
         break;
       case 'pago':
-        await agregarMetodoPago();
+        await agregarMetodoPago(correoAutenticado);
         break;
       case 'cambiar':
-        correoAutenticado = null;
-        await autenticarCorreo();
+        correoAutenticado = await autenticarCorreo();
         break;
+      case 'volver':
+        return;
       case 'salir':
         console.log('👋 ¡Hasta luego!');
         process.exit(0);
@@ -230,12 +243,18 @@ async function mostrarMenu() {
 async function iniciarApp() {
   try {
     console.log('🚀 Iniciando Cliente CLI de Perfil...\n');
-    await autenticarCorreo();
-    await mostrarMenu();
+    const correoAutenticado = await autenticarCorreo();
+    await mostrarMenu(correoAutenticado);
   } catch (error) {
     console.error('❌ Error fatal:', error.message);
     process.exit(1);
   }
 }
 
-iniciarApp();
+// Exportar la función principal
+module.exports = { startProfileClient };
+
+// Solo ejecutar directamente si es llamado como script principal
+if (require.main === module) {
+  iniciarApp();
+}

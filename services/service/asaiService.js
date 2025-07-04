@@ -43,9 +43,37 @@ async function interpretarConsulta(query, userId) {
     const q = query.toLowerCase().trim();
     console.log(`[asaiService] Interpretando consulta para el usuario ${userId}: "${q}"`);
 
-    
+    // 0. COMANDO DE AYUDA - Mostrar todos los comandos disponibles
+    if (q.includes('ayuda') || q.includes('help') || q.includes('comando') || q === '?' || q.includes('qué puedes hacer')) {
+        return `🤖 ¡Hola! Soy ASAI, tu asistente de compras. Estos son los comandos que puedo entender:
 
-    
+📦 BÚSQUEDA DE PRODUCTOS:
+   • "buscar zapatillas" - Buscar productos específicos
+   • "mostrar productos nike" - Buscar por marca (nike, adidas, puma, etc.)
+   • "tienes algo de color azul" - Buscar por color (rojo, azul, negro, etc.)
+   • "muéstrame poleras adidas" - Combinar tipo y marca
+   • "buscar chaquetas negras" - Combinar tipo y color
+
+💰 BÚSQUEDA POR PRECIO:
+   • "mostrar precios entre 100 y 500" - Buscar en rango de precio
+   • "productos entre 50 y 200" - Buscar productos en ese rango
+
+📋 ESTADO DE PEDIDOS:
+   • "estado de mi pedido" - Ver el estado de tu último pedido
+   • "mi orden" - Información sobre tus pedidos
+
+🆘 AYUDA:
+   • "ayuda" o "help" - Mostrar este menú de comandos
+   • "salir", "exit" o "quit" - Terminar conversación
+
+💡 MARCAS DISPONIBLES: Nike, Adidas, Puma, Reebok, Jordan
+🎨 COLORES DISPONIBLES: Rojo, Azul, Negro, Blanco, Verde, Amarillo, Gris
+👕 TIPOS DE PRODUCTO: Zapatillas, Poleras, Pantalones, Chaquetas, Shorts
+
+¡Prueba cualquiera de estos comandos!`;
+    }
+
+    // 1. BÚSQUEDA POR RANGO DE PRECIO
     const precioRegex = /entre\s+(\d+)\s+y\s+(\d+)/;
     const match = q.match(precioRegex);
     if (match) {
@@ -58,24 +86,29 @@ async function interpretarConsulta(query, userId) {
         }).limit(10);
 
         if (productos.length === 0) {
-            return `No encontré productos entre $${min} y $${max}.`;
+            return `❌ No encontré productos entre $${min} y $${max}. Prueba con otro rango de precios.`;
         }
 
         // Devuelve una lista simple de nombres y precios
-        return productos.map(p => 
-            `${p.nombre} - desde $${Math.min(...p.variaciones.map(v => v.precio))}`
+        let respuesta = `💰 Productos entre $${min} y $${max}:\n\n`;
+        respuesta += productos.map(p => 
+            `  💎 ${p.nombre} (${p.marca}) - desde $${Math.min(...p.variaciones.map(v => v.precio))}`
         ).join('\n');
+        respuesta += `\n\n📝 Encontré ${productos.length} productos en tu rango de precio.`;
+        return respuesta;
     }
 
-    // 1. Verificación de estado de pedido (lógica existente)
-    if (q.includes('pedido') || q.includes('orden')) {
+    // 2. Verificación de estado de pedido
+    if (q.includes('pedido') || q.includes('orden') || q.includes('compra') || q.includes('estado')) {
         const ultimoPedido = await Order.findOne({ user_id: userId }).sort({ createdAt: -1 }).lean();
-        if (!ultimoPedido) return "Aún no tienes pedidos en tu historial.";
-        return `El estado de tu último pedido es: "${ultimoPedido.estado}".`;
+        if (!ultimoPedido) {
+            return "📦 Aún no tienes pedidos en tu historial. ¡Explora nuestro catálogo y haz tu primera compra!";
+        }
+        return `📋 El estado de tu último pedido es: "${ultimoPedido.estado}"\n🆔 ID del pedido: ${ultimoPedido._id}\n📅 Fecha: ${new Date(ultimoPedido.createdAt).toLocaleDateString('es-ES')}`;
     }
 
-    // 2. NUEVA LÓGICA: Verificación de búsqueda de productos
-    if (q.includes('buscar') || q.includes('mostrar') || q.includes('tienes') || q.includes('producto')) {
+    // 3. BÚSQUEDA DE PRODUCTOS
+    if (q.includes('buscar') || q.includes('mostrar') || q.includes('tienes') || q.includes('producto') || q.includes('muestra')) {
         
         // Objeto de consulta dinámico para Mongoose
         const queryObject = {};
@@ -83,14 +116,14 @@ async function interpretarConsulta(query, userId) {
         // Dividimos la consulta en palabras para analizarlas
         const palabras = q.replace(/,/g, ' ').split(' ').filter(p => p.length > 2);
 
-        // Términos comunes de productos y marcas (puedes expandir esto)
-        const tiposProducto = ['zapatilla', 'polera', 'pantalón', 'chaqueta', 'short'];
+        // Términos actualizados
+        const tiposProducto = ['zapatilla', 'zapatillas', 'polera', 'poleras', 'pantalón', 'pantalones', 'chaqueta', 'chaquetas', 'short', 'shorts'];
         const marcasConocidas = ['nike', 'adidas', 'puma', 'reebok', 'jordan'];
         const coloresConocidos = ['rojo', 'azul', 'negro', 'blanco', 'verde', 'amarillo', 'gris'];
 
         palabras.forEach(palabra => {
             // Buscar por tipo de producto
-            if (tiposProducto.some(tipo => palabra.includes(tipo))) {
+            if (tiposProducto.some(tipo => palabra.includes(tipo) || tipo.includes(palabra))) {
                 queryObject.nombre = new RegExp(palabra, 'i');
             }
             // Buscar por marca
@@ -105,31 +138,51 @@ async function interpretarConsulta(query, userId) {
 
         // Si no se construyó ninguna consulta, es una pregunta genérica
         if (Object.keys(queryObject).length === 0) {
-            return "Puedo buscar productos por tipo (zapatilla, polera), marca o color. ¿Qué te gustaría encontrar?";
+            return `🔍 Puedo buscar productos específicos para ti. Prueba con:
+   • Tipo: "buscar zapatillas", "mostrar poleras"
+   • Marca: "productos nike", "mostrar adidas"
+   • Color: "algo azul", "productos negros"
+   
+💡 O escribe "ayuda" para ver todos los comandos disponibles.`;
         }
 
         console.log('[asaiService] Ejecutando búsqueda con el objeto:', queryObject);
-        const productos = await Product.find(queryObject).limit(5).lean(); // Limitamos a 5 para no saturar
+        const productos = await Product.find(queryObject).limit(8).lean(); // Aumentamos a 8
 
         if (productos.length === 0) {
-            return "Lo siento, no encontré productos que coincidan con tu búsqueda. Intenta con otros términos.";
+            return `❌ Lo siento, no encontré productos que coincidan con tu búsqueda.
+            
+💡 Sugerencias:
+   • Intenta con términos más generales
+   • Verifica la ortografía
+   • Prueba con marcas como: Nike, Adidas, Puma
+   • O escribe "ayuda" para ver todos los comandos`;
         }
 
-        // Formateamos una respuesta amigable
-        let respuesta = `¡Claro! Encontré esto para ti:\n`;
+        // Formateamos una respuesta amigable con emojis
+        let respuesta = `🎯 ¡Perfecto! Encontré ${productos.length} productos para ti:\n\n`;
 
-        productos.forEach(p => {
-            respuesta += `  - ${p.nombre} marca ${p.marca} - precio $${Math.min(...p.variaciones.map(v => v.precio))}\n`;
+        productos.forEach((p, index) => {
+            const precioMin = Math.min(...p.variaciones.map(v => v.precio));
+            const colores = [...new Set(p.variaciones.map(v => v.color))].slice(0, 3).join(', ');
+            respuesta += `  ${index + 1}. 🛍️ ${p.nombre} - ${p.marca}\n`;
+            respuesta += `     💰 Desde $${precioMin} | 🎨 Colores: ${colores}\n\n`;
         });
 
-    
+        respuesta += `📝 Mostrando ${productos.length} resultados. ¿Te interesa alguno en particular?`;
         return respuesta;
-
-
     }
 
-    // 3. Respuesta por defecto (lógica existente)
-    return "¡Hola! Soy ASAI. ¿En qué puedo ayudarte? Prueba con 'buscar productos' o 'estado de mi pedido'.";
+    // 4. Respuesta por defecto mejorada
+    return `🤖 ¡Hola! Soy ASAI, tu asistente de compras.
+
+💡 No entendí tu consulta, pero puedo ayudarte con:
+   • 🔍 Buscar productos: "buscar zapatillas nike"
+   • 💰 Ver precios: "productos entre 100 y 300"
+   • 📦 Estado de pedidos: "estado de mi pedido"
+   • 🆘 Ver todos los comandos: "ayuda"
+
+¿En qué te puedo ayudar?`;
 }
 
 /**
