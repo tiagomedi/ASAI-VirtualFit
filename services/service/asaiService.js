@@ -11,30 +11,30 @@ const ASAI_SERVICE_NAME = 'asais';
 
 /**
  * Helper para enviar respuestas a través del socket del worker.
+ * Mantiene el mismo formato que authService para consistencia.
  */
-function sendMessage(socket, destinationId, payload) {
-    const messageJson = JSON.stringify(payload);
-    const finalPayloadString = destinationId + messageJson;
+function sendMessage(socket, destination, message, serviceName, status = 'OK') {
+    console.log(`[asaiService] Preparando para enviar a destino: '${destination}'`);
+    // The message format should be: destination(5) + serviceName(5) + status(2) + JSON
+    // The bus will route based on destination and forward the entire message to the client
+    const destinationFormatted = destination.padEnd(5, ' '); // Destino (clientId) para routing del bus
+    const serviceNameFormatted = serviceName.padEnd(5, ' '); // Nombre del servicio - 5 bytes  
+    const statusField = status.padEnd(2, ' '); // Campo de status - 2 bytes
+    const fullMessage = destinationFormatted + serviceNameFormatted + statusField + message;
+    const header = String(Buffer.byteLength(fullMessage, 'utf8')).padStart(5, '0');
+    socket.write(header + fullMessage);
+    console.log(`[asaiService] Mensaje completo enviado: '${fullMessage.substring(0, 20)}...'`);
+}
 
-    // 1. Crear un Buffer a partir del payload string. Esto nos da la longitud en bytes REAL.
-    const payloadBuffer = Buffer.from(finalPayloadString, 'utf8');
-    const payloadLength = payloadBuffer.length; // .length en un Buffer es su tamaño en bytes.
-
-    // 2. Crear un Buffer para el header. 5 bytes de longitud.
-    const headerBuffer = Buffer.alloc(5);
-    headerBuffer.write(String(payloadLength).padStart(5, '0'), 'utf8');
-
-    // 3. Concatenar los dos buffers (header + payload) en un único buffer final.
-    const messageBuffer = Buffer.concat([headerBuffer, payloadBuffer]);
-
-    try {
-        // 4. Escribir el buffer completo en una sola operación.
-        // Esto es mucho más fiable que escribir una string concatenada.
-        socket.write(messageBuffer);
-        console.log(`[Service] Respuesta enviada a '${destinationId}'. Header: ${headerBuffer.toString()}, Longitud: ${payloadLength}, Total Bytes: ${messageBuffer.length}`);
-    } catch (error) {
-        console.error(`[Service] Error al escribir en el socket: ${error.message}`);
-    }
+/**
+ * Función para registrar un servicio en el bus.
+ */
+function registerService(socket, serviceName) {
+    console.log(`[asaiService] Registrando servicio: '${serviceName}'`);
+    const registerPayload = 'sinit' + serviceName;
+    const header = String(Buffer.byteLength(registerPayload, 'utf8')).padStart(5, '0');
+    socket.write(header + registerPayload);
+    console.log(`[asaiService] Registro enviado para '${serviceName}'.`);
 }
 /**
  * Lógica de negocio para interpretar la consulta.
@@ -155,7 +155,7 @@ async function handleAsaiRequest(socket, messageContent) {
             correlationId,
             data: { respuesta: asaiResponseText } 
         };
-        sendMessage(socket, responseClientId, successPayload);
+        sendMessage(socket, responseClientId, JSON.stringify(successPayload), ASAI_SERVICE_NAME, 'OK');
 
     } catch (error) {
         console.error(`[asaiService Handler] Error: ${error.message}`);
@@ -165,7 +165,7 @@ async function handleAsaiRequest(socket, messageContent) {
                 correlationId,
                 message: error.message 
             };
-            sendMessage(socket, responseClientId, errorPayload);
+            sendMessage(socket, responseClientId, JSON.stringify(errorPayload), ASAI_SERVICE_NAME, 'NK');
         }
     }
 }
@@ -179,13 +179,12 @@ function createAsaiWorker() {
     let isRegistered = false;
 
     workerSocket.connect({ host: BUS_HOST, port: BUS_PORT }, () => {
-        console.log(`[Worker ${ASAI_SERVICE_NAME}] Conectado para recibir peticiones.`);
-        const registerPayload = 'sinit' + ASAI_SERVICE_NAME;
-        const header = String(Buffer.byteLength(registerPayload, 'utf8')).padStart(5, '0');
-        workerSocket.write(header + registerPayload);
+        console.log(`[Worker ${ASAI_SERVICE_NAME}] Conectado al bus.`);
+        registerService(workerSocket, ASAI_SERVICE_NAME);
     });
 
     workerSocket.on('data', (dataChunk) => {
+        console.log(`[Worker ${ASAI_SERVICE_NAME}] Datos recibidos: ${dataChunk.toString().substring(0, 50)}...`);
         buffer += dataChunk.toString('utf8');
         while (true) {
             if (buffer.length < 5) break;
@@ -195,16 +194,16 @@ function createAsaiWorker() {
             const fullPayload = buffer.substring(5, 5 + length);
             buffer = buffer.substring(5 + length);
             const destination = fullPayload.substring(0, 5);
+            console.log(`[Worker ${ASAI_SERVICE_NAME}] Mensaje para destino: '${destination}', esperado: '${ASAI_SERVICE_NAME}'`);
 
-            // Manejar respuestas del bus
-            if (!isRegistered && destination === ASAI_SERVICE_NAME) {
+            // Manejar respuestas del bus para el registro
+            if (!isRegistered && destination === 'sinit') {
                 const response = fullPayload.substring(5);
-                if (response === 'OK') {
+                if (response.includes('OK' + ASAI_SERVICE_NAME)) {
                     console.log(`[Worker ${ASAI_SERVICE_NAME}] Registrado exitosamente en el bus`);
                     isRegistered = true;
-                } else if (response.startsWith('NK')) {
+                } else if (response.includes('NK')) {
                     console.error(`[Worker ${ASAI_SERVICE_NAME}] Error de registro: ${response}`);
-                    // Intentar reconectar después de un tiempo
                     setTimeout(() => {
                         workerSocket.destroy();
                     }, 5000);
@@ -215,6 +214,7 @@ function createAsaiWorker() {
             // Procesar solicitudes de clientes solo si estamos registrados
             if (isRegistered && destination === ASAI_SERVICE_NAME) {
                 const messageContent = fullPayload.substring(5);
+                console.log(`[Worker ${ASAI_SERVICE_NAME}] Contenido del mensaje: ${messageContent.substring(0, 100)}...`);
                 
                 // Verificar si el mensaje es una respuesta del bus (OK/NK)
                 if (messageContent === 'OK' || messageContent.startsWith('NK')) {
@@ -225,10 +225,13 @@ function createAsaiWorker() {
                 // Procesar solo si parece ser una solicitud de cliente (debe ser JSON)
                 try {
                     JSON.parse(messageContent);
+                    console.log(`[Worker ${ASAI_SERVICE_NAME}] Procesando petición de cliente...`);
                     handleAsaiRequest(workerSocket, messageContent);
                 } catch (error) {
                     console.log(`[Worker ${ASAI_SERVICE_NAME}] Mensaje no es JSON válido, ignorando: ${messageContent.substring(0, 50)}...`);
                 }
+            } else if (isRegistered) {
+                console.log(`[Worker ${ASAI_SERVICE_NAME}] Mensaje ignorado - destino no coincide: '${destination}' vs '${ASAI_SERVICE_NAME}'`);
             }
         }
     });
@@ -242,9 +245,10 @@ function createAsaiWorker() {
     workerSocket.on('error', (err) => {
         console.error(`[Worker ${ASAI_SERVICE_NAME}] Error de socket: ${err.message}`);
         isRegistered = false;
-        // La conexión se cerrará y el evento 'close' se encargará de reconectar.
     });
 }
+
+
 
 /**
  * Función principal que inicia el servicio.

@@ -8,8 +8,10 @@ const CLIENT_ID = uuidv4().substring(0, 5);
 const pendingResponses = new Map();
 const clientSocket = new net.Socket();
 let buffer = ''; // Cambiar a string como otros archivos del proyecto
+let processBufferTimeout = null;
 
 clientSocket.on('data', (chunk) => {
+    console.log(`[Cliente] Datos recibidos: ${chunk.toString().substring(0, 50)}...`);
     buffer += chunk.toString();
     processBuffer();
 });
@@ -24,22 +26,45 @@ clientSocket.on('close', () => {
 });
 
 function processBuffer() {
+    console.log(`[Cliente] DEBUG - processBuffer: buffer length = ${buffer.length}`);
+    
+    // Limpiar timeout anterior si existe
+    if (processBufferTimeout) {
+        clearTimeout(processBufferTimeout);
+        processBufferTimeout = null;
+    }
+    
     while (buffer.length >= 5) {
         const lengthStr = buffer.substring(0, 5);
         const length = parseInt(lengthStr, 10);
+        console.log(`[Cliente] DEBUG - Esperando mensaje de longitud: ${length}, tenemos: ${buffer.length}`);
         if (isNaN(length)) {
             console.error('[Cliente] Error en el header del mensaje, limpiando buffer');
             buffer = '';
             break;
         }
         if (buffer.length < 5 + length) {
-            break; // Esperar más datos
+            console.log(`[Cliente] DEBUG - Mensaje incompleto, esperando más datos... Faltan ${(5 + length) - buffer.length} bytes`);
+            
+            // Reintentar después de un pequeño delay para permitir más datos
+            processBufferTimeout = setTimeout(() => {
+                if (buffer.length >= 5 + length) {
+                    processBuffer();
+                } else {
+                    console.log(`[Cliente] DEBUG - Timeout esperando datos, procesando mensaje incompleto...`);
+                    // Procesar lo que tenemos si ha pasado suficiente tiempo
+                    if (buffer.length > 5) {
+                        const partialMessage = buffer.substring(0, buffer.length);
+                        buffer = '';
+                        handleMessage(partialMessage);
+                    }
+                }
+            }, 100);
+            break;
         }
         const fullMessage = buffer.substring(0, 5 + length);
         buffer = buffer.substring(5 + length);
-        
-        console.log(`[Cliente] DEBUG - Full message: '${fullMessage}'`);
-        console.log(`[Cliente] DEBUG - Message content: '${fullMessage.substring(5)}'`);
+        console.log(`[Cliente] DEBUG - Procesando mensaje completo de ${fullMessage.length} bytes`);
         
         // Procesar el mensaje completo
         handleMessage(fullMessage);
@@ -47,6 +72,8 @@ function processBuffer() {
 }
 
 function handleMessage(fullMessage) {
+    console.log(`[Cliente] DEBUG - Mensaje completo recibido (${fullMessage.length} bytes): '${fullMessage.substring(0, 100)}...'`);
+    
     // El mensaje viene en formato: [header 5 bytes][destino 5 bytes][servicio 5 bytes][status 2 bytes][JSON]
     if (fullMessage.length < 17) {
         console.error('[Cliente] Mensaje muy corto, ignorando');
@@ -59,20 +86,26 @@ function handleMessage(fullMessage) {
     const status = messageContent.substring(10, 12).trim(); // Status
     const responseJson = messageContent.substring(12); // JSON content
     
-    console.log(`[Cliente] DEBUG - Dest: '${destination}', Service: '${serviceName}', Status: '${status}', JSON: '${responseJson.substring(0, 50)}...'`);
+    console.log(`[Cliente] DEBUG - Dest: '${destination}', Service: '${serviceName}', Status: '${status}', CLIENT_ID: '${CLIENT_ID}'`);
+    console.log(`[Cliente] DEBUG - JSON: '${responseJson.substring(0, 100)}...'`);
 
     try {
         const response = JSON.parse(responseJson);
+        console.log(`[Cliente] DEBUG - Respuesta parseada: correlationId='${response.correlationId}', tenemos pendiente: ${pendingResponses.has(response.correlationId)}`);
         
         if (response.correlationId && pendingResponses.has(response.correlationId)) {
             const handler = pendingResponses.get(response.correlationId);
             pendingResponses.delete(response.correlationId);
             
             if (status === 'OK') {
+                console.log(`[Cliente] DEBUG - Resolviendo promesa exitosamente`);
                 handler(null, response);
             } else {
+                console.log(`[Cliente] DEBUG - Resolviendo promesa con error`);
                 handler(new Error(`Error del servicio ${serviceName}: ${response.message || 'Error desconocido'}`), null);
             }
+        } else {
+            console.log(`[Cliente] DEBUG - No se encontró handler para correlationId: ${response.correlationId}`);
         }
     } catch (e) {
         console.error(`[Cliente] Error al procesar mensaje JSON: ${e.message}`);
@@ -89,7 +122,7 @@ function sendMessage(service, message) {
     console.log(`[Cliente] Enviando a '${service}'... (Header: ${header})`);
 }
 
-function sendRequestAndWait(service, requestData, timeoutMs = 10000) {
+function sendRequestAndWait(service, requestData, timeoutMs = 60000) {
     return new Promise((resolve, reject) => {
         const correlationId = uuidv4();
         requestData.correlationId = correlationId;
