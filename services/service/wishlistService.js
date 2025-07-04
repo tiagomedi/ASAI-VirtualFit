@@ -1,71 +1,38 @@
 // services/service/wishlistService.js
-
+// VERSIÓN FINAL Y CORRECTA - Servidor Autónomo
 const { connectDB } = require('../../database/db.js');
 const net = require('net');
 const wishlistLogic = require('./wishlistLogic.js');
 
-const BUS_HOST = 'localhost';
-const BUS_PORT = 5001;
 const SERVICE_NAME = 'deseo';
+const DIRECT_HOST = 'localhost';
+const DIRECT_PORT = 5003; // Puerto directo para el cliente
 
-// --- Funciones de Comunicación Profesionales y Estandarizadas ---
-function header(n) { return String(n).padStart(5, '0'); }
-
-function registerService(socket) {
-    const registerMessage = header(10) + 'sinit'.padEnd(5) + SERVICE_NAME.padEnd(5);
-    socket.write(registerMessage);
-}
-
-function sendResponse(socket, data) {
-    const resPayload = JSON.stringify(data);
-    const serviceHeader = SERVICE_NAME.padEnd(5, ' ');
-    const fullMessage = header(serviceHeader.length + resPayload.length) + serviceHeader + resPayload;
-    socket.write(fullMessage);
-}
-
-function sendError(socket, errorMessage) {
-    const errPayload = JSON.stringify({ error: errorMessage });
-    const serviceHeader = SERVICE_NAME.padEnd(5, ' ');
-    const fullMessage = header(serviceHeader.length + errPayload.length) + serviceHeader + errPayload;
-    socket.write(fullMessage);
-}
-// --- Función Principal del Servicio (ya robusta) ---
-async function startService() {
-    await connectDB();
-    const serviceSocket = new net.Socket();
-    const connectToBus = () => serviceSocket.connect(BUS_PORT, BUS_HOST);
-
-    serviceSocket.on('connect', () => {
-        registerService(serviceSocket);
-    });
-
+/**
+ * Maneja una conexión directa de un cliente.
+ * @param {net.Socket} socket El socket del cliente conectado.
+ */
+async function handleDirectConnection(socket) {
+    const clientAddress = `${socket.remoteAddress}:${socket.remotePort}`;
+    
     let buffer = '';
-    serviceSocket.on('data', (data) => {
-        buffer += data.toString();
+    socket.setEncoding('utf8');
+
+    socket.on('data', (data) => {
+        buffer += data;
         while (true) {
-            if (buffer.length < 5) break;
+            if (buffer.length < 5) break; 
             const length = parseInt(buffer.substring(0, 5), 10);
-            if (isNaN(length)) { buffer = ''; break; }
+            if (isNaN(length)) { buffer = ''; socket.end(); break; }
             const totalMessageLength = 5 + length;
             if (buffer.length < totalMessageLength) break;
             
-            const messageToProcess = buffer.substring(0, totalMessageLength);
+            const messageToProcess = buffer.substring(5, totalMessageLength);
             buffer = buffer.substring(totalMessageLength);
-            // Ignorar respuestas OK/NK del bus (confirmaciones de registro)
-            const statusCheck = messageToProcess.substring(10, 12);
-            if (statusCheck === 'OK' || statusCheck === 'NK') {
-                continue;
-            }
 
-            // Verificar si es un mensaje válido de solicitud
-            if (messageToProcess.length < 15) {
-                continue;
-            }
-
-            const messageContent = messageToProcess.substring(10);
             (async () => {
                 try {
-                    const req = JSON.parse(messageContent);
+                    const req = JSON.parse(messageToProcess);
                     let result;
                     switch (req.action) {
                         case 'view':
@@ -78,20 +45,40 @@ async function startService() {
                             result = await wishlistLogic.eliminarDeLista(req.user_id, req.producto_id);
                             break;
                         default:
-                            throw new Error(`Acción desconocida en wishlistService: ${req.action}`);
+                            throw new Error(`Acción directa desconocida: ${req.action}`);
                     }
-                    sendResponse(serviceSocket, result);
+                    
+                    const payload = JSON.stringify(result);
+                    const header = String(payload.length).padStart(5, '0');
+                    socket.write(header + payload);
+
                 } catch (error) {
-                    sendError(serviceSocket, error.message);
+                    const errorResponse = { status: 'error', message: error.message };
+                    const payload = JSON.stringify(errorResponse);
+                    const header = String(payload.length).padStart(5, '0');
+                    socket.write(header + payload);
+                } finally {
+                    socket.end();
                 }
             })();
         }
     });
 
-    serviceSocket.on('close', () => { buffer = ''; setTimeout(connectToBus, 5000); });
-    serviceSocket.on('error', (err) => {});
+    socket.on('error', (err) => {});
+    socket.on('close', () => {});
+}
 
-    connectToBus();
+async function startService() {
+    await connectDB();
+    
+    const directServer = net.createServer(handleDirectConnection);
+    directServer.listen(DIRECT_PORT, DIRECT_HOST, () => {
+        console.log(`[${SERVICE_NAME}Service] ✅ Escuchando conexiones DIRECTAS en ${DIRECT_HOST}:${DIRECT_PORT}`);
+    });
+
+    directServer.on('error', (err) => {
+        console.error(`[${SERVICE_NAME}Service] Error en el servidor principal:`, err);
+    });
 }
 
 startService();

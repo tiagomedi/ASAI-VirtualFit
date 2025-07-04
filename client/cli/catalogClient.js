@@ -7,13 +7,21 @@ const User = require('../../database/models/user.model.js');
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
 const CATALOG_DIRECT_PORT = 5002;
+const WISHLIST_DIRECT_PORT = 5003;
 const CATALOG_PAGE_SIZE = 4;
 const WISHLIST_PAGE_SIZE = 4;
 
 function sendRequest(serviceName, requestPayload) {
     return new Promise((resolve, reject) => {
-        const isDirect = serviceName === 'catal';
-        const targetPort = isDirect ? CATALOG_DIRECT_PORT : BUS_PORT;
+        const isDirect = serviceName === 'catal' || serviceName === 'deseo';
+        let targetPort;
+        if (serviceName === 'catal') {
+            targetPort = CATALOG_DIRECT_PORT;
+        } else if (serviceName === 'deseo') {
+            targetPort = WISHLIST_DIRECT_PORT;
+        } else {
+            targetPort = BUS_PORT;
+        }
 
         const clientSocket = new net.Socket();
         clientSocket.setEncoding('utf8');
@@ -171,12 +179,16 @@ async function manageWishlist(inquirer, userId) {
             displayProducts(products, title);
             
             if (!products || products.length === 0) {
-                if (currentPage === 1) {
+                if (currentPage === 1 && totalProducts === 0) {
                     console.log("\n💔 Tu lista de deseos está vacía.");
                     await inquirer.prompt([{ type: 'list', name: 'continue', message: 'Presiona Enter para volver.', choices: ['Ok'] }]);
+                    goBack = true;
+                    continue;
+                } else if (currentPage > 1) {
+                    // Si estamos en una página posterior y no hay productos, volver a la anterior
+                    currentPage--;
+                    continue;
                 }
-                goBack = true;
-                continue;
             }
 
             // Crear opciones del menú
