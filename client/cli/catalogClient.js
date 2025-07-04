@@ -8,17 +8,20 @@ const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
 const CATALOG_DIRECT_PORT = 5002;
 const WISHLIST_DIRECT_PORT = 5003;
+const CART_DIRECT_PORT = 5004;
 const CATALOG_PAGE_SIZE = 4;
 const WISHLIST_PAGE_SIZE = 4;
 
 function sendRequest(serviceName, requestPayload) {
     return new Promise((resolve, reject) => {
-        const isDirect = serviceName === 'catal' || serviceName === 'deseo';
+        const isDirect = serviceName === 'catal' || serviceName === 'deseo' || serviceName === 'carro';
         let targetPort;
         if (serviceName === 'catal') {
             targetPort = CATALOG_DIRECT_PORT;
         } else if (serviceName === 'deseo') {
             targetPort = WISHLIST_DIRECT_PORT;
+        } else if (serviceName === 'carro') {
+            targetPort = CART_DIRECT_PORT;
         } else {
             targetPort = BUS_PORT;
         }
@@ -86,14 +89,13 @@ function sendRequest(serviceName, requestPayload) {
                     // Verificar si el status indica error
                     if (statusFromResponse !== 'OK' && statusFromResponse.trim() !== 'OK') {
                         clearTimeout(timeout);
+                        clientSocket.end(); // Cerrar socket inmediatamente en caso de error
                         try {
                             const errorData = JSON.parse(jsonString);
                             const errorMessage = errorData.error || errorData.message || `Error del servicio (Status: ${statusFromResponse})`;
                             reject(new Error(errorMessage));
                         } catch (e) {
                             reject(new Error(`Error del servicio (Status: ${statusFromResponse}): ${jsonString}`));
-                        } finally {
-                            clientSocket.end();
                         }
                         return;
                     }
@@ -101,12 +103,12 @@ function sendRequest(serviceName, requestPayload) {
                     try {
                         const jsonData = JSON.parse(jsonString);
                         clearTimeout(timeout);
+                        clientSocket.end(); // Cerrar socket inmediatamente después de procesar
                         resolve(jsonData);
                     } catch (e) {
                         clearTimeout(timeout);
+                        clientSocket.end(); // Cerrar socket en caso de error también
                         reject(new Error(`Error al parsear JSON de respuesta: ${e.message}`));
-                    } finally {
-                        clientSocket.end();
                     }
                 }
             }

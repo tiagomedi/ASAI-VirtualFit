@@ -33,7 +33,7 @@ const SERVICES_CONFIG = {
     cartService: {
         name: 'Carrito',
         path: 'services/service/cartService.js',
-        port: 5001,
+        port: 5004,
         description: 'Gestión del carrito de compras'
     },
     orderService: {
