@@ -42,19 +42,86 @@ async function listarTodosLosProductos(page = 1, limit = 4) {
 }
 
 async function buscarProductos(termino) {
-    return Product.find({ $text: { $search: termino } }).lean();
+    console.log(`--- [catalogLogic] INICIANDO buscarProductos con término: "${termino}" ---`);
+    try {
+        if (!termino || termino.trim() === '') {
+            throw new Error("El término de búsqueda no puede estar vacío.");
+        }
+
+        const terminoLimpio = termino.trim();
+        
+        // Búsqueda flexible usando regex en múltiples campos
+        const productos = await Product.find({
+            $or: [
+                { nombre: { $regex: terminoLimpio, $options: 'i' } },
+                { marca: { $regex: terminoLimpio, $options: 'i' } },
+                { categoria: { $regex: terminoLimpio, $options: 'i' } },
+                { descripcion: { $regex: terminoLimpio, $options: 'i' } },
+                { tags: { $regex: terminoLimpio, $options: 'i' } },
+                { 'variaciones.color': { $regex: terminoLimpio, $options: 'i' } },
+                { 'variaciones.talla': { $regex: terminoLimpio, $options: 'i' } }
+            ]
+        }).lean();
+
+        console.log(`--- [catalogLogic] ÉXITO: Búsqueda devolvió ${productos.length} productos ---`);
+        return productos;
+    } catch (error) {
+        console.error("--- [catalogLogic] ERROR en buscarProductos ---:", error);
+        throw new Error("Error al buscar productos: " + error.message);
+    }
 }
 
 async function filtrarProductos(criteria) {
-    const query = {};
-    if (criteria.marca) query.marca = { $regex: criteria.marca, $options: 'i' };
-    if (criteria.color) query['variaciones.color'] = { $regex: criteria.color, $options: 'i' };
-    if (criteria.precio_min || criteria.precio_max) {
-        query['variaciones.precio'] = {};
-        if (criteria.precio_min) query['variaciones.precio'].$gte = criteria.precio_min;
-        if (criteria.precio_max) query['variaciones.precio'].$lte = criteria.precio_max;
+    console.log(`--- [catalogLogic] INICIANDO filtrarProductos con criterios:`, criteria);
+    try {
+        const query = {};
+        
+        // Filtro por marca
+        if (criteria.marca && criteria.marca.trim()) {
+            query.marca = { $regex: criteria.marca.trim(), $options: 'i' };
+        }
+        
+        // Filtro por categoría
+        if (criteria.categoria && criteria.categoria.trim()) {
+            query.categoria = { $regex: criteria.categoria.trim(), $options: 'i' };
+        }
+        
+        // Filtro por color
+        if (criteria.color && criteria.color.trim()) {
+            query['variaciones.color'] = { $regex: criteria.color.trim(), $options: 'i' };
+        }
+        
+        // Filtro por talla
+        if (criteria.talla && criteria.talla.trim()) {
+            query['variaciones.talla'] = { $regex: criteria.talla.trim(), $options: 'i' };
+        }
+        
+        // Filtro por rango de precios
+        if (criteria.precio_min || criteria.precio_max) {
+            query['variaciones.precio'] = {};
+            if (criteria.precio_min) {
+                query['variaciones.precio'].$gte = Number(criteria.precio_min);
+            }
+            if (criteria.precio_max) {
+                query['variaciones.precio'].$lte = Number(criteria.precio_max);
+            }
+        }
+        
+        // Filtro por disponibilidad en stock
+        if (criteria.solo_disponibles === true) {
+            query['variaciones.stock'] = { $gt: 0 };
+        }
+
+        console.log(`--- [catalogLogic] Query construida:`, JSON.stringify(query, null, 2));
+        
+        const productos = await Product.find(query).lean();
+        
+        console.log(`--- [catalogLogic] ÉXITO: Filtros devolvieron ${productos.length} productos ---`);
+        return productos;
+    } catch (error) {
+        console.error("--- [catalogLogic] ERROR en filtrarProductos ---:", error);
+        throw new Error("Error al filtrar productos: " + error.message);
     }
-    return Product.find(query).lean();
 }
 
 async function obtenerDetallesProducto(productoId) {
