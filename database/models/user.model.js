@@ -16,7 +16,7 @@ const DireccionSchema = new Schema({
 });
 
 const MetodoPagoSchema = new Schema({
-    tipo: { type: String, required: true, enum: ['Tarjeta de Crédito', 'PayPal', 'Otro'] },
+    tipo: { type: String, required: true, enum: ['Tarjeta de Crédito', 'PayPal', 'Otro', 'Visa'] },
     detalle: { type: String, required: true }, // Ej: "**** **** **** 1234"
     expiracion: String // Ej: "12/26"
 });

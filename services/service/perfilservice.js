@@ -1,6 +1,7 @@
 /* ---------------- PERFIL SERVICE (multi-registro por correo) ---------- */
 const net = require('net');
-require('../../database/db');                     // conexión central
+const { connectDB } = require('../../database/db');
+connectDB();                   // conexión central
 const User = require('../../database/models/user.model');
 
 const BUS_HOST = process.env.BUS_HOST || 'localhost';
@@ -77,3 +78,4 @@ function registerService(code) {
 }
 
 ['prfl1', 'prfl2', 'prfl3'].forEach(registerService);
+

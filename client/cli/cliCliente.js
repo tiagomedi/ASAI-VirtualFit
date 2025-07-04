@@ -77,13 +77,18 @@ function mostrarMenu() {
           { name: 'codigo_postal',    message: 'Código postal:'    }
         );
 
-      if (op === 'pago')
+        if (op === 'pago')
         preguntas.push(
-          { name: 'tipo',       message: 'Tipo (Visa, etc):' },
+          { 
+            type: 'list',
+            name: 'tipo',
+            message: 'Tipo de método de pago:',
+            choices: ['Visa', 'Tarjeta de Crédito', 'PayPal', 'Otro']
+          },
           { name: 'detalle',    message: 'Detalle:'          },
           { name: 'expiracion', message: 'Expiración MM/YY:' }
         );
-
+      
       inquirer.prompt(preguntas).then(({ correo, ...resto }) => {
         const email = correo.trim().toLowerCase();
         if (op === 'ver')  return enviar('prfl1', email);

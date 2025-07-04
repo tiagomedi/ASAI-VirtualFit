@@ -143,6 +143,40 @@ async function procesarPago({ user_id, direccion_id, metodo_pago_id, pointsToUse
         console.log('[pagosLogic] Total de pago es <= 0 después del descuento. No se envían puntos para ganar.');
     }
 
+    // NUEVA LÓGICA: ENVIAR MAIL
+    // ---------------------------
+
+    if (serviceSocket) {
+        const emailPayload = {
+            action: 'send_email',
+            to: usuario.correo,
+            order_id: savedOrder._id.toString(),
+            order_date: savedOrder.createdAt.toISOString().split('T')[0],
+            address: {
+                nombre_direccion: direccionEnvio.nombre_direccion,
+                calle: direccionEnvio.calle,
+                ciudad: direccionEnvio.ciudad,
+                region: direccionEnvio.region,
+                codigo_postal: direccionEnvio.codigo_postal
+            },
+            products: savedOrder.items.map(item => ({
+                nombre: item.nombre,
+                marca: item.marca || 'N/A',
+                color: item.color || 'N/A',
+                talla: item.talla || 'N/A',
+                cantidad: item.cantidad,
+                precio_unitario: item.precio_unitario
+            })),
+            total_pagado: savedOrder.total_pago,
+            mensaje: '¡Tu pedido se ha procesado con éxito!'
+        };
+
+        console.log(`[pagosLogic] Enviando notificación de correo al servicio notf1.`);
+        _sendMessageToService(serviceSocket, 'notf1', emailPayload);
+    } else {
+        console.warn(`[pagosLogic] No se pudo enviar notificación de correo porque serviceSocket es undefined.`);
+    }
+
     return savedOrder; 
 }
 
