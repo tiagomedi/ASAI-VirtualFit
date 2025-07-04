@@ -43,38 +43,9 @@ async function interpretarConsulta(query, userId) {
     const q = query.toLowerCase().trim();
     console.log(`[asaiService] Interpretando consulta para el usuario ${userId}: "${q}"`);
 
-    // 0. Verificación de comando de salida
-    if (q === 'exit' || q === 'salir' || q === 'quit' || q === 'bye') {
-        return {
-            type: 'exit',
-            message: "¡Hasta luego! Volviendo al menú principal..."
-        };
-    }
+    
 
-    // 1. Verificación de comandos de ayuda
-    if (q.includes('ayuda') || q.includes('help') || q.includes('comandos')) {
-        return {
-            type: 'help',
-            message: `¡Hola! Soy ASAI, tu asistente virtual. Puedo ayudarte con:
-            
-📋 COMANDOS DISPONIBLES:
-• "buscar [producto]" - Buscar productos específicos
-• "mostrar productos [marca]" - Ver productos de una marca
-• "tienes algo de color [color]" - Buscar por color
-• "estado de mi pedido" - Ver el estado de tus pedidos
-• "mostrar precios entre [min] y [max]" - Buscar por rango de precios
-• "exit" o "salir" - Salir de la conversación
-
-💡 EJEMPLOS:
-• "buscar zapatillas nike"
-• "mostrar productos adidas"
-• "tienes algo de color azul"
-• "mostrar precios entre 50 y 100"
-
-¿En qué puedo ayudarte hoy?`
-        };
-    }
-
+    
     const precioRegex = /entre\s+(\d+)\s+y\s+(\d+)/;
     const match = q.match(precioRegex);
     if (match) {
@@ -87,39 +58,23 @@ async function interpretarConsulta(query, userId) {
         }).limit(10);
 
         if (productos.length === 0) {
-            return {
-                type: 'search_result',
-                message: `No encontré productos entre $${min} y $${max}.`
-            };
+            return `No encontré productos entre $${min} y $${max}.`;
         }
 
         // Devuelve una lista simple de nombres y precios
-        const productList = productos.map(p => 
+        return productos.map(p => 
             `${p.nombre} - desde $${Math.min(...p.variaciones.map(v => v.precio))}`
         ).join('\n');
-        
-        return {
-            type: 'search_result',
-            message: `💰 Productos entre $${min} y $${max}:\n${productList}`
-        };
     }
 
-    // 2. Verificación de estado de pedido (lógica existente)
+    // 1. Verificación de estado de pedido (lógica existente)
     if (q.includes('pedido') || q.includes('orden')) {
         const ultimoPedido = await Order.findOne({ user_id: userId }).sort({ createdAt: -1 }).lean();
-        if (!ultimoPedido) {
-            return {
-                type: 'order_status',
-                message: "📦 Aún no tienes pedidos en tu historial."
-            };
-        }
-        return {
-            type: 'order_status',
-            message: `📦 El estado de tu último pedido es: "${ultimoPedido.estado}".`
-        };
+        if (!ultimoPedido) return "Aún no tienes pedidos en tu historial.";
+        return `El estado de tu último pedido es: "${ultimoPedido.estado}".`;
     }
 
-    // 3. NUEVA LÓGICA: Verificación de búsqueda de productos
+    // 2. NUEVA LÓGICA: Verificación de búsqueda de productos
     if (q.includes('buscar') || q.includes('mostrar') || q.includes('tienes') || q.includes('producto')) {
         
         // Objeto de consulta dinámico para Mongoose
@@ -150,52 +105,31 @@ async function interpretarConsulta(query, userId) {
 
         // Si no se construyó ninguna consulta, es una pregunta genérica
         if (Object.keys(queryObject).length === 0) {
-            return {
-                type: 'search_help',
-                message: "🔍 Puedo buscar productos por tipo (zapatilla, polera), marca o color. ¿Qué te gustaría encontrar?\n\n💡 Ejemplos:\n• 'buscar zapatillas nike'\n• 'mostrar productos adidas'\n• 'tienes algo de color azul'"
-            };
+            return "Puedo buscar productos por tipo (zapatilla, polera), marca o color. ¿Qué te gustaría encontrar?";
         }
 
         console.log('[asaiService] Ejecutando búsqueda con el objeto:', queryObject);
         const productos = await Product.find(queryObject).limit(5).lean(); // Limitamos a 5 para no saturar
 
         if (productos.length === 0) {
-            return {
-                type: 'search_result',
-                message: "😔 Lo siento, no encontré productos que coincidan con tu búsqueda. Intenta con otros términos.\n\n💡 Prueba con: 'ayuda' para ver comandos disponibles."
-            };
+            return "Lo siento, no encontré productos que coincidan con tu búsqueda. Intenta con otros términos.";
         }
 
         // Formateamos una respuesta amigable
-        let respuesta = `🛍️ ¡Claro! Encontré esto para ti:\n\n`;
+        let respuesta = `¡Claro! Encontré esto para ti:\n`;
 
-        productos.forEach((p, index) => {
-            respuesta += `${index + 1}. ${p.nombre} marca ${p.marca} - desde $${Math.min(...p.variaciones.map(v => v.precio))}\n`;
+        productos.forEach(p => {
+            respuesta += `  - ${p.nombre} marca ${p.marca} - precio $${Math.min(...p.variaciones.map(v => v.precio))}\n`;
         });
 
-        respuesta += `\n💡 Escribe 'exit' para volver al menú principal.`;
-        
-        return {
-            type: 'search_result',
-            message: respuesta
-        };
+    
+        return respuesta;
+
+
     }
 
-    // 4. Respuesta por defecto (lógica existente)
-    return {
-        type: 'welcome',
-        message: `¡Hola! 👋 Soy ASAI, tu asistente virtual de VirtualFit.
-
-¿En qué puedo ayudarte hoy?
-
-💡 COMANDOS POPULARES:
-• 'buscar productos' - Buscar en nuestro catálogo
-• 'estado de mi pedido' - Ver tus pedidos
-• 'ayuda' - Ver todos los comandos disponibles
-• 'exit' - Salir de la conversación
-
-¡Prueba escribiendo algo!`
-    };
+    // 3. Respuesta por defecto (lógica existente)
+    return "¡Hola! Soy ASAI. ¿En qué puedo ayudarte? Prueba con 'buscar productos' o 'estado de mi pedido'.";
 }
 
 /**
@@ -214,30 +148,14 @@ async function handleAsaiRequest(socket, messageContent) {
             throw new Error("Petición a ASAI inválida: falta 'userId', 'query', 'clientId' o 'correlationId'.");
         }
 
-        const asaiResponse = await interpretarConsulta(query, userId);
+        const asaiResponseText = await interpretarConsulta(query, userId);
         
-        // Verificar si es un comando de salida
-        if (asaiResponse.type === 'exit') {
-            const exitPayload = { 
-                status: 'exit', 
-                correlationId,
-                data: { 
-                    respuesta: asaiResponse.message,
-                    shouldExit: true 
-                } 
-            };
-            sendMessage(socket, responseClientId, JSON.stringify(exitPayload), ASAI_SERVICE_NAME, 'OK');
-        } else {
-            const successPayload = { 
-                status: 'success', 
-                correlationId,
-                data: { 
-                    respuesta: asaiResponse.message,
-                    type: asaiResponse.type 
-                } 
-            };
-            sendMessage(socket, responseClientId, JSON.stringify(successPayload), ASAI_SERVICE_NAME, 'OK');
-        }
+        const successPayload = { 
+            status: 'success', 
+            correlationId,
+            data: { respuesta: asaiResponseText } 
+        };
+        sendMessage(socket, responseClientId, JSON.stringify(successPayload), ASAI_SERVICE_NAME, 'OK');
 
     } catch (error) {
         console.error(`[asaiService Handler] Error: ${error.message}`);
