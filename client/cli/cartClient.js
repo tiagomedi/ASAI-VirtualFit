@@ -176,23 +176,21 @@ async function mainMenu(inquirer) {
                 type: 'list', name: 'action', message: '¿Qué deseas hacer?',
                 choices: [ 
                     { name: '🛒 Ver y Gestionar mi Carrito', value: 'view' }, 
-                    { name: '➕ Añadir un Producto al Carrito (Manual)', value: 'add' },
-                    { name: '🔍 Ver mis Órdenes Recientes', value: 'find_orders' }, 
                     new inquirer.Separator(), 
                     { name: '🚪 Salir', value: 'exit' } 
-                    ]
+                ]
             }]);
 
             switch (action) {
-                case 'add': await runAddLogic(inquirer, usuario._id.toString()); break;
                 case 'view': 
                     const paymentSuccess = await manageCartMenu(inquirer, usuario);
                     if (paymentSuccess) {
                         exit = true; 
                     }
                     break;
-                case 'find_orders': await runFindOrdersLogic(inquirer, usuario); break;
-                case 'exit': exit = true; break;
+                case 'exit': 
+                    exit = true; 
+                    break;
             }
         }
     } catch (error) {
@@ -207,20 +205,6 @@ async function mainMenu(inquirer) {
     }
 }
 
-async function runAddLogic(inquirer, userId) {
-    try {
-        console.log('\n--- ➕ Añadir Producto al Carrito ---');
-        const { producto_id } = await inquirer.prompt([{ type: 'input', name: 'producto_id', message: 'Introduce el ID del producto a añadir:' }]);
-        const { cantidad } = await inquirer.prompt([{ type: 'number', name: 'cantidad', message: 'Introduce la cantidad:', default: 1, validate: v => v > 0 || 'Must be > 0' }]);
-        
-        console.log("Enviando solicitud al servicio 'carro' para añadir producto...");
-        await sendRequest('carro', { action: 'add', user_id: userId, producto_id: producto_id.trim(), cantidad: parseInt(cantidad, 10) });
-        
-        console.log("✅ ¡Producto añadido al carrito!");
-    } catch (error) {
-        console.error(`\n❌ Error al añadir producto: ${error.message}`);
-    }
-}
 
 function displayCart(cart) {
     console.log("\n--- 🛒 Tu Carrito de Compras ---");
@@ -371,35 +355,6 @@ async function manageCartMenu(inquirer, usuario) {
         } 
     } 
     return paymentSuccess;
-}
-
-async function runFindOrdersLogic(inquirer, usuario) {
-    try {
-        console.log('\n--- 🔍 Buscando Órdenes de Usuario 🔍 ---');
-        const email = usuario.correo.trim().toLowerCase();
-        const findRequest = { action: 'find_orders', payload: { email: email } };
-        
-        console.log("\nEnviando solicitud para buscar órdenes...");
-        const responseData = await sendRequest('order', findRequest); 
-        
-        if (!responseData || responseData.length === 0) {
-            console.log("\n✅ No se encontraron órdenes recientes para este usuario.");
-        } else {
-            console.log(`\n✅ Se encontraron ${responseData.length} órdenes recientes:`);
-            responseData.forEach(orden => {
-                console.log("\n=============================================");
-                console.log(`  Orden ID:     ${orden._id}`);
-                console.log(`  Fecha:        ${new Date(orden.createdAt).toLocaleString('es-ES')}`);
-                console.log(`  Estado:       ${orden.estado}`);
-                console.log(`  Total Pagado: $${(orden.total_pago || 0).toLocaleString('es-ES')}`);
-                console.log(`  Puntos Usados: ${orden.points_used || 0}`); 
-                console.log(`  Nº de Items:  ${orden.itemCount}`);
-                console.log("=============================================");
-            });
-        }
-    } catch (error) {
-        console.error(`\n❌ Error al buscar órdenes: ${error.message}`);
-    }
 }
 
 startClient();
