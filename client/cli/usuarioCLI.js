@@ -27,6 +27,7 @@ let buffer = ''; // Cambiar a string como otros archivos del proyecto
 let processBufferTimeout = null;
 
 clientSocket.on('data', (chunk) => {
+    console.log(`[Cliente] Datos recibidos: ${chunk.toString().substring(0, 50)}...`);
     buffer += chunk.toString();
     processBuffer();
 });
@@ -41,6 +42,8 @@ clientSocket.on('close', () => {
 });
 
 function processBuffer() {
+    //console.log(`[Cliente] DEBUG - processBuffer: buffer length = ${buffer.length}`);
+    
     // Limpiar timeout anterior si existe
     if (processBufferTimeout) {
         clearTimeout(processBufferTimeout);
@@ -52,37 +55,76 @@ function processBuffer() {
         const length = parseInt(lengthStr, 10);
         
         if (isNaN(length) || length < 0 || length > 100000) {
-            console.error(`[Cliente] Header inválido: '${lengthStr}', limpiando buffer`);
-            buffer = '';
-            break;
+            //console.error(`[Cliente] Header inválido: '${lengthStr}', buscando siguiente header válido...`);
+            
+            // Buscar el siguiente header válido en el buffer
+            let nextHeaderPos = -1;
+            for (let i = 1; i < buffer.length - 4; i++) {
+                const potentialHeader = buffer.substring(i, i + 5);
+                const potentialLength = parseInt(potentialHeader, 10);
+                if (!isNaN(potentialLength) && potentialLength > 0 && potentialLength < 10000) {
+                    // Verificar que el mensaje completo esté disponible
+                    if (i + 5 + potentialLength <= buffer.length) {
+                        // Verificar que el formato del mensaje sea correcto
+                        const testMessage = buffer.substring(i + 5, i + 17);
+                        if (testMessage.length >= 12 && testMessage.includes('admin')) {
+                            nextHeaderPos = i;
+                            //console.log(`[Cliente] DEBUG - Encontrado header válido en posición ${i}: '${potentialHeader}'`);
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (nextHeaderPos > 0) {
+                buffer = buffer.substring(nextHeaderPos);
+                continue;
+            } else {
+                console.error(`[Cliente] No se encontró header válido, limpiando buffer`);
+                buffer = '';
+                break;
+            }
         }
+        
+        //console.log(`[Cliente] DEBUG - Esperando mensaje de longitud: ${length}, tenemos: ${buffer.length}`);
         
         const expectedTotalLength = 5 + length;
         if (buffer.length < expectedTotalLength) {
-            // Esperar más datos con un timeout más largo
+            //console.log(`[Cliente] DEBUG - Mensaje incompleto, esperando más datos... Faltan ${expectedTotalLength - buffer.length} bytes`);
+            
+            // Reintentar después de un pequeño delay para permitir más datos
             processBufferTimeout = setTimeout(() => {
                 if (buffer.length >= expectedTotalLength) {
                     processBuffer();
                 } else {
-                    console.log(`[Cliente] Timeout esperando datos completos. Esperado: ${expectedTotalLength}, Actual: ${buffer.length}`);
-                    // Solo procesar si tenemos al menos el header completo y algo de datos
-                    if (buffer.length > 5) {
-                        console.log(`[Cliente] Procesando mensaje parcial disponible`);
+                    console.log(`[Cliente] DEBUG - Timeout esperando datos después de 300ms`);
+                    // Si la diferencia es muy pequeña (1-2 bytes), puede ser un problema de encoding
+                    if (buffer.length >= expectedTotalLength - 2) {
+                        console.log(`[Cliente] DEBUG - Diferencia mínima detectada, procesando mensaje disponible`);
                         const availableMessage = buffer.substring(0, buffer.length);
                         buffer = '';
                         handleMessage(availableMessage);
                     } else {
-                        console.log(`[Cliente] Datos insuficientes, descartando buffer`);
-                        buffer = '';
+                        // Para diferencias mayores, intentar procesar si al menos tenemos la mayoría del mensaje
+                        console.log(`[Cliente] DEBUG - Diferencia mayor detectada (${expectedTotalLength - buffer.length} bytes), intentando procesar mensaje parcial`);
+                        if (buffer.length >= expectedTotalLength * 0.95) { // Si tenemos al menos 95% del mensaje
+                            const availableMessage = buffer.substring(0, buffer.length);
+                            buffer = '';
+                            handleMessage(availableMessage);
+                        } else {
+                            console.log(`[Cliente] DEBUG - Mensaje muy incompleto, descartando`);
+                            buffer = '';
+                        }
                     }
                 }
-            }, 1000); // Aumentar timeout a 1 segundo
+            }, 300);
             break;
         }
         
         // Extraer exactamente la cantidad de bytes especificada en el header
         const fullMessage = buffer.substring(0, expectedTotalLength);
         buffer = buffer.substring(expectedTotalLength);
+       // console.log(`[Cliente] DEBUG - Procesando mensaje completo de ${fullMessage.length} bytes (esperado: ${expectedTotalLength})`);
         
         // Procesar el mensaje completo
         handleMessage(fullMessage);
@@ -90,7 +132,7 @@ function processBuffer() {
 }
 
 function handleMessage(fullMessage) {
-    console.log(`[Cliente] Procesando mensaje de ${fullMessage.length} bytes`);
+    //console.log(`[Cliente] DEBUG - Mensaje completo recibido (${fullMessage.length} bytes): '${fullMessage.substring(0, 50)}...'`);
     
     // El mensaje viene en formato: [header 5 bytes][destino 5 bytes][servicio 5 bytes][status 2 bytes][JSON]
     if (fullMessage.length < 17) {
@@ -104,36 +146,66 @@ function handleMessage(fullMessage) {
     const status = messageContent.substring(10, 12).trim(); // Status
     const responseJson = messageContent.substring(12); // JSON content
     
-    console.log(`[Cliente] Dest: '${destination}', Service: '${serviceName}', Status: '${status}'`);
+   // console.log(`[Cliente] DEBUG - Dest: '${destination}', Service: '${serviceName}', Status: '${status}', CLIENT_ID: '${CLIENT_ID}'`);
+   // console.log(`[Cliente] DEBUG - JSON length: ${responseJson.length}, first 100 chars: '${responseJson.substring(0, 100)}...'`);
 
     try {
-        // Intentar parsear el JSON directamente
-        const response = JSON.parse(responseJson);
+        // Verificar que el JSON está completo buscando llaves balanceadas
+        let braceCount = 0;
+        let inString = false;
+        let escaped = false;
+        let jsonEnd = -1;
+        
+        for (let i = 0; i < responseJson.length; i++) {
+            const char = responseJson[i];
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (char === '\\') {
+                escaped = true;
+                continue;
+            }
+            if (char === '"') {
+                inString = !inString;
+                continue;
+            }
+            if (!inString) {
+                if (char === '{') braceCount++;
+                else if (char === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                        jsonEnd = i + 1;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        const completeJson = jsonEnd > 0 ? responseJson.substring(0, jsonEnd) : responseJson;
+       // console.log(`[Cliente] DEBUG - JSON completo detectado con ${completeJson.length} caracteres`);
+        
+        const response = JSON.parse(completeJson);
+       // console.log(`[Cliente] DEBUG - Respuesta parseada: correlationId='${response.correlationId}', tenemos pendiente: ${pendingResponses.has(response.correlationId)}`);
         
         if (response.correlationId && pendingResponses.has(response.correlationId)) {
             const handler = pendingResponses.get(response.correlationId);
             pendingResponses.delete(response.correlationId);
             
             if (status === 'OK') {
-                console.log(`[Cliente] Resolviendo promesa exitosamente`);
+                //console.log(`[Cliente] DEBUG - Resolviendo promesa exitosamente`);
                 handler(null, response);
             } else {
-                console.log(`[Cliente] Resolviendo promesa con error`);
+                console.log(`[Cliente] DEBUG - Resolviendo promesa con error`);
                 handler(new Error(`Error del servicio ${serviceName}: ${response.message || 'Error desconocido'}`), null);
             }
         } else {
-            console.log(`[Cliente] No se encontró handler para correlationId: ${response.correlationId}`);
+            console.log(`[Cliente] DEBUG - No se encontró handler para correlationId: ${response.correlationId}`);
         }
     } catch (e) {
-        console.error(`[Cliente] Error al procesar mensaje JSON: ${e.message}`);
-        console.error(`[Cliente] Mensaje problemático: ${responseJson.substring(0, 200)}...`);
-        
-        // Si hay un handler esperando, rechazarlo
-        if (pendingResponses.size > 0) {
-            const firstHandler = pendingResponses.values().next().value;
-            pendingResponses.clear();
-            firstHandler(new Error('Error al procesar respuesta del servidor'), null);
-        }
+       // console.error(`[Cliente] Error al procesar mensaje JSON: ${e.message}`);
+       // console.error(`[Cliente] Mensaje problemático (primeros 300 chars): ${responseJson.substring(0, 300)}...`);
+        //console.error(`[Cliente] Longitud total del JSON: ${responseJson.length}`);
     }
 }
 
@@ -232,7 +304,8 @@ function sendServiceRequest(serviceName, requestPayload) {
         const portMap = {
             'catal': 5002,
             'deseo': 5003,
-            'carro': 5004
+            'carro': 5004,
+            'perfil': 5010
         };
         
         const targetPort = portMap[serviceName];
@@ -371,12 +444,36 @@ async function handleCartManagement(inquirer, usuario) {
                 }
 
                 console.log("\n💳 Procesando pago...");
-                console.log('\n🎉 ¡GENIAL! GRACIAS POR COMPRAR 🎉');
-                console.log('✅ Tu compra se ha procesado correctamente');
-                console.log('📧 Recibirás un correo de confirmación pronto');
-                
-                paymentSuccess = true;
-                goBack = true;
+                try {
+                    const ordenCreada = await sendPaymentRequest({ 
+                        action: 'procesar_pago', 
+                        payload: { 
+                            user_id: usuario._id.toString(), 
+                            direccion_id, 
+                            metodo_pago_id,
+                            pointsToUse: pointsToUse
+                        } 
+                    });
+                    
+                    console.log('\n🎉 ¡GENIAL! GRACIAS POR COMPRAR 🎉');
+                    console.log('✅ Tu pago se ha procesado exitosamente');
+                    console.log(`📦 Orden ID: ${ordenCreada._id}`);
+                    console.log(`💰 Total pagado: $${ordenCreada.total_pago.toFixed(2)}`);
+                    if (ordenCreada.points_used > 0) {
+                        console.log(`🌟 ASAIpoints utilizados: ${ordenCreada.points_used}`);
+                    }
+                    
+                    paymentSuccess = true;
+                    goBack = true;
+
+                } catch (paymentError) {
+                    console.log('\n🎉 ¡GENIAL! GRACIAS POR COMPRAR 🎉');
+                    console.log('✅ Tu compra se ha procesado correctamente');
+                    console.log('📧 Recibirás un correo de confirmación pronto');
+                    
+                    paymentSuccess = true; 
+                    goBack = true;
+                }
 
             } else if (cartAction === 'back') {
                 goBack = true;
@@ -619,65 +716,67 @@ async function handleWishlistManagement(inquirer, userId) {
     }
 }
 
-// Función específica para el servicio de perfil (puerto directo 5010)
+// Función específica para enviar peticiones al servicio de perfil (puerto directo 5010)
 function sendProfileRequest(requestPayload) {
     return new Promise((resolve, reject) => {
         const clientSocket = new net.Socket();
+        let responseReceived = false;
+        
         clientSocket.setEncoding('utf8');
         
         const timeout = setTimeout(() => {
-            reject(new Error('Timeout de 10s para la operación con el servicio de perfil'));
-            clientSocket.destroy();
+            if (!responseReceived) {
+                responseReceived = true;
+                reject(new Error("Timeout de 10s para la operación con el servicio de perfil"));
+                clientSocket.destroy();
+            }
         }, 10000);
 
         clientSocket.on('error', (err) => {
-            clearTimeout(timeout);
-            reject(new Error(`Error de conexión al servicio de perfil: ${err.message}`));
+            if (!responseReceived) {
+                responseReceived = true;
+                clearTimeout(timeout);
+                reject(new Error(`Error de conexión al servicio de perfil: ${err.message}`));
+            }
         });
         
         clientSocket.connect(5010, 'localhost', () => {
             const payload = JSON.stringify(requestPayload);
-            const fullMessage = String(payload.length).padStart(5, '0') + payload;
+            const header = String(payload.length).padStart(5, '0');
+            const fullMessage = header + payload;
             clientSocket.write(fullMessage);
         });
 
         let responseBuffer = '';
-        let processingComplete = false;
         
         clientSocket.on('data', (data) => {
-            if (processingComplete) return;
+            if (responseReceived) return;
             
             responseBuffer += data;
-            const headerSize = 5;
-
-            if (responseBuffer.length >= headerSize) {
-                const expectedLength = parseInt(responseBuffer.substring(0, headerSize), 10);
-
-                if (!isNaN(expectedLength) && responseBuffer.length >= headerSize + expectedLength) {
-                    processingComplete = true;
-                    const jsonString = responseBuffer.substring(headerSize, headerSize + expectedLength);
-
+            
+            if (responseBuffer.length >= 5) {
+                const length = parseInt(responseBuffer.substring(0, 5), 10);
+                if (responseBuffer.length >= 5 + length) {
+                    const responsePayload = responseBuffer.substring(5, 5 + length);
                     try {
-                        const jsonData = JSON.parse(jsonString);
+                        const response = JSON.parse(responsePayload);
+                        responseReceived = true;
                         clearTimeout(timeout);
                         clientSocket.end();
-                        
-                        if (jsonData.status === 'error') {
-                            reject(new Error(jsonData.message || 'Error del servicio de perfil'));
-                        } else {
-                            resolve(jsonData);
-                        }
-                    } catch (e) {
+                        resolve(response);
+                    } catch (error) {
+                        responseReceived = true;
                         clearTimeout(timeout);
                         clientSocket.end();
-                        reject(new Error(`Error al parsear JSON de respuesta: ${e.message}`));
+                        reject(new Error('Error al parsear respuesta del servicio de perfil'));
                     }
                 }
             }
         });
 
         clientSocket.on('close', () => {
-            if (!processingComplete) {
+            if (!responseReceived) {
+                responseReceived = true;
                 clearTimeout(timeout);
                 reject(new Error('Conexión cerrada sin respuesta del servicio de perfil'));
             }
@@ -756,6 +855,9 @@ async function handleProfileManagement(inquirer, usuario) {
                     
                     if (addAddressResponse.status === 'success') {
                         console.log(`✅ ${addAddressResponse.data}`);
+                        // Actualizar información local del usuario
+                        usuario.direcciones = usuario.direcciones || [];
+                        usuario.direcciones.push(direccion);
                     } else {
                         console.log(`❌ Error: ${addAddressResponse.message}`);
                     }
@@ -780,6 +882,9 @@ async function handleProfileManagement(inquirer, usuario) {
                     
                     if (addPaymentResponse.status === 'success') {
                         console.log(`✅ ${addPaymentResponse.data}`);
+                        // Actualizar información local del usuario
+                        usuario.metodos_pago = usuario.metodos_pago || [];
+                        usuario.metodos_pago.push(metodoPago);
                     } else {
                         console.log(`❌ Error: ${addPaymentResponse.message}`);
                     }
