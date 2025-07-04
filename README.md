@@ -194,3 +194,7 @@ Para simular una compra dentro del ecosistema de Virtual Fit, se deben activar y
    Abre una terminal y ejecuta el siguiente comando:
    ```bash
    node cartClient.js
+
+💡 **Nota**: Aparece el siguiente error al realizar una compra, sin embargo, esta se realiza exitosamente:
+    ```bash
+    ❌ Error en la gestión del carrito: Timeout: El servidor pagos no respondió a tiempo (5000ms).
