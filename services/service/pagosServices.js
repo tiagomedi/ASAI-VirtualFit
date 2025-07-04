@@ -12,16 +12,17 @@ function header(n) { return String(n).padStart(5, '0'); }
 function sendResponse(socket, data) {
     const service = SERVICE_NAME.padEnd(5, ' ');
     const payload = JSON.stringify(data);
-    const fullMessage = header(service.length + 2 + payload.length) + service + 'OK' + payload;
-    console.log(`[${SERVICE_NAME}Service] -> Enviando respuesta OK`);
+    const fullMessage = header(service.length + payload.length) + service + payload;
+    console.log(`[${SERVICE_NAME}Service] -> Enviando respuesta (sin status, el bus lo agrega)`);
     socket.write(fullMessage);
 }
 
 function sendError(socket, errorMessage) {
     const service = SERVICE_NAME.padEnd(5, ' ');
-    const payload = JSON.stringify({ error: errorMessage });
-    const fullMessage = header(service.length + 2 + payload.length) + service + 'NK' + payload;
-    console.error(`❌ [${SERVICE_NAME}Service] -> Enviando ERROR (NK): ${errorMessage}`);
+    const errorResponse = { status: 'error', message: errorMessage };
+    const payload = JSON.stringify(errorResponse);
+    const fullMessage = header(service.length + payload.length) + service + payload;
+    console.error(`❌ [${SERVICE_NAME}Service] -> Enviando ERROR (sin status, el bus lo agrega): ${errorMessage}`);
     socket.write(fullMessage);
 }
 // --- Fin Funciones de Respuesta ---
@@ -46,7 +47,7 @@ async function startService() {
             const length = parseInt(header, 10);
 
             if (isNaN(length) || length <= 0 || length > 100000) { 
-                console.error(`❌ [${SERVICE_NAME}Service] Invalid or negative header length "${header}" (Parsed: ${length}). Clearing buffer to prevent infinite loop.`);
+                // console.error(`❌ [${SERVICE_NAME}Service] Invalid or negative header length "${header}" (Parsed: ${length}). Clearing buffer to prevent infinite loop.`);
                 buffer = ''; 
                 break; 
             }
@@ -60,7 +61,7 @@ async function startService() {
             const fullMessage = buffer.substring(0, totalMessageLength);
             buffer = buffer.slice(totalMessageLength);
             if (fullMessage.length < 10) { 
-                console.warn(`[${SERVICE_NAME}Service] Received message too short to contain service name (${fullMessage.length} bytes). Ignoring.`);
+                // console.warn(`[${SERVICE_NAME}Service] Received message too short to contain service name (${fullMessage.length} bytes). Ignoring.`);
                 continue;
             }
 
@@ -86,10 +87,12 @@ async function startService() {
                 if (serviceReceived === SERVICE_NAME) {
                     console.log(`[${SERVICE_NAME}Service] Processing client request.`);
                     const requestPayloadString = contentAfterService; 
-                    (async (sendResponseFunc, sendErrorFunc, socket) => {
+                    (async () => {
                         let session = null; 
                         try {
                             const requestData = JSON.parse(requestPayloadString); 
+                            console.log(`[${SERVICE_NAME}Service] 📥 Procesando solicitud:`, requestData.action);
+                            
                             if (requestData.action === 'procesar_pago') { 
                                 session = await mongoose.connection.startSession();
                                 session.startTransaction();
@@ -98,7 +101,7 @@ async function startService() {
 
                             let resultado;
                             if (requestData.action === 'procesar_pago') {
-                                resultado = await procesarPago(requestData.payload, session, socket);
+                                resultado = await procesarPago(requestData.payload, session, serviceSocket);
                             } else {
                                 throw new Error(`Acción no reconocida en servicio '${SERVICE_NAME}': '${requestData.action}'`);
                             }
@@ -107,7 +110,9 @@ async function startService() {
                                 await session.commitTransaction();
                                 console.log(`--- [${SERVICE_NAME}Service] Transaction committed ---`); 
                             }
-                            sendResponseFunc(socket, resultado); 
+                            
+                            console.log(`[${SERVICE_NAME}Service] ✅ Enviando respuesta exitosa`);
+                            sendResponse(serviceSocket, resultado); 
 
                         } catch (error) {
                             console.error(`❌ [${SERVICE_NAME}Service] ERROR during async processing:`, error.message); 
@@ -115,17 +120,17 @@ async function startService() {
                                 await session.abortTransaction();
                                 console.log(`--- [${SERVICE_NAME}Service] Transaction aborted ---`); 
                             }
-                            sendErrorFunc(socket, error.message); 
+                            sendError(serviceSocket, error.message); 
                         } finally {
                             if (session) { 
                                 await session.endSession();
                                 console.log(`--- [${SERVICE_NAME}Service] Session ended ---`); 
                             }
                         }
-                    })(sendResponse, sendError, serviceSocket); 
+                    })(); 
 
                 } else {
-                    console.warn(`❌ [${SERVICE_NAME}Service] Client request format message for wrong service ('${serviceReceived}'). Expected '${SERVICE_NAME}'. Ignoring.`);
+                    // console.warn(`❌ [${SERVICE_NAME}Service] Client request format message for wrong service ('${serviceReceived}'). Expected '${SERVICE_NAME}'. Ignoring.`);
                 }
             }
         } 
