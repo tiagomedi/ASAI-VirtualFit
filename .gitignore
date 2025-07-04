@@ -1,4 +1,4 @@
+.env
 venv/
 database/.env
-service/.env
-.env/
+servic.env
