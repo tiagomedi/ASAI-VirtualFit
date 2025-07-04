@@ -51,7 +51,7 @@ const SERVICES_CONFIG = {
     perfilservice: {
         name: 'Perfil',
         path: 'services/service/perfilservice.js',
-        port: 5001,
+        port: 5010,
         description: 'Gestión de perfiles de usuario'
     },
     reseñaService: {

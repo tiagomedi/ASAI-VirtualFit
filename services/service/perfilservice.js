@@ -1,11 +1,15 @@
 /* ---------------- PERFIL SERVICE (multi-registro por correo) ---------- */
 const net = require('net');
 const { connectDB } = require('../../database/db');
-connectDB();                   // conexión central
 const User = require('../../database/models/user.model');
 
 const BUS_HOST = process.env.BUS_HOST || 'localhost';
 const BUS_PORT = Number(process.env.BUS_PORT) || 5001;
+
+// Servidor directo para clientes
+const SERVICE_NAME = 'perfil';
+const DIRECT_HOST = 'localhost';
+const DIRECT_PORT = 5010; // Puerto directo para el cliente
 
 /* ---- Helper para armar tramas con longitud en bytes ------------------ */
 const frame = (svc, status, body = '') => {
@@ -48,6 +52,72 @@ async function handleMessage(svc, data) {
     default:
       throw new Error('Comando no reconocido');
   }
+}
+
+/**
+ * Maneja una conexión directa de un cliente.
+ * @param {net.Socket} socket El socket del cliente conectado.
+ */
+async function handleDirectConnection(socket) {
+    const clientAddress = `${socket.remoteAddress}:${socket.remotePort}`;
+    console.log(`[${SERVICE_NAME}Service] Cliente conectado DIRECTAMENTE (${clientAddress})`);
+    
+    let buffer = '';
+    socket.setEncoding('utf8');
+
+    socket.on('data', (data) => {
+        buffer += data;
+        while (true) {
+            if (buffer.length < 5) break; 
+            const length = parseInt(buffer.substring(0, 5), 10);
+            if (isNaN(length)) { buffer = ''; socket.end(); break; }
+            const totalMessageLength = 5 + length;
+            if (buffer.length < totalMessageLength) break;
+            
+            const messageToProcess = buffer.substring(5, totalMessageLength);
+            buffer = buffer.substring(totalMessageLength);
+            
+            console.log(`[${SERVICE_NAME}Service] <- Petición directa recibida: ${messageToProcess}`);
+
+            (async () => {
+                try {
+                    const req = JSON.parse(messageToProcess);
+                    let result;
+                    
+                    switch (req.action) {
+                        case 'ver_perfil':
+                            result = await handleMessage('prfl1', req.correo);
+                            break;
+                        case 'agregar_direccion':
+                            result = await handleMessage('prfl2', `${req.correo}|${JSON.stringify(req.direccion)}`);
+                            break;
+                        case 'agregar_pago':
+                            result = await handleMessage('prfl3', `${req.correo}|${JSON.stringify(req.metodo_pago)}`);
+                            break;
+                        default:
+                            throw new Error(`Acción directa desconocida: ${req.action}`);
+                    }
+                    
+                    const response = { status: 'success', data: result };
+                    const payload = JSON.stringify(response);
+                    const header = String(payload.length).padStart(5, '0');
+                    socket.write(header + payload);
+
+                } catch (error) {
+                    console.error(`[${SERVICE_NAME}Service] ERROR en conexión directa:`, error.message);
+                    const errorResponse = { status: 'error', message: error.message };
+                    const payload = JSON.stringify(errorResponse);
+                    const header = String(payload.length).padStart(5, '0');
+                    socket.write(header + payload);
+                } finally {
+                    socket.end();
+                }
+            })();
+        }
+    });
+
+    socket.on('error', (err) => console.log(`Error en socket directo (${clientAddress}): ${err.message}`));
+    socket.on('close', () => console.log(`Conexión directa cerrada (${clientAddress}).`));
 }
 
 /* -------- Crea una conexión y registra un código de servicio ---------- */
@@ -129,5 +199,22 @@ function registerService(code) {
   });
 }
 
-['prfl1', 'prfl2', 'prfl3'].forEach(registerService);
+async function startService() {
+    await connectDB();
+    
+    // Servidor directo para clientes
+    const directServer = net.createServer(handleDirectConnection);
+    directServer.listen(DIRECT_PORT, DIRECT_HOST, () => {
+        console.log(`[${SERVICE_NAME}Service] Escuchando conexiones DIRECTAS en ${DIRECT_HOST}:${DIRECT_PORT}`);
+    });
+
+    directServer.on('error', (err) => {
+        console.error(`[${SERVICE_NAME}Service] Error en el servidor directo:`, err);
+    });
+
+    // Registro en el bus (mantener funcionalidad existente)
+    ['prfl1', 'prfl2', 'prfl3'].forEach(registerService);
+}
+
+startService();
 
