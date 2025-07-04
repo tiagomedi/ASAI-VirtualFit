@@ -53,28 +53,80 @@ async function handleMessage(svc, data) {
 /* -------- Crea una conexión y registra un código de servicio ---------- */
 function registerService(code) {
   const sock = new net.Socket();
+  let buffer = '';
+  let isRegistered = false;
 
   sock.connect(BUS_PORT, BUS_HOST, () => {
     const sinit = `sinit${code}`;
     sock.write(String(sinit.length).padStart(5, '0') + sinit);
-    console.log(`[PerfilService] ✅ Registrado código '${code}'`);
+    console.log(`[PerfilService] ✅ Registrando código '${code}'`);
   });
 
-  sock.on('data', async (buf) => {
-    const total   = buf.readUIntBE(0, 5);               // primera parte
-    const payload = buf.slice(5, 5 + total).toString();
-    const svc     = payload.slice(0, 5);
-    const datos   = payload.slice(5);
-
-    let status = 'OK', body = '';
-    try   { body = await handleMessage(svc, datos); }
-    catch (e) { status = 'NK'; body = e.message;   }
-
-    sock.write(frame(svc, status, body));
+  sock.on('data', async (dataChunk) => {
+    buffer += dataChunk.toString();
+    
+    while (buffer.length >= 5) {
+      const lengthStr = buffer.substring(0, 5);
+      const length = parseInt(lengthStr, 10);
+      
+      if (isNaN(length) || length <= 0) {
+        console.error(`[PerfilService:${code}] ❌ Header inválido: ${lengthStr}`);
+        buffer = '';
+        break;
+      }
+      
+      if (buffer.length < 5 + length) {
+        break; // Esperar más datos
+      }
+      
+      const fullMessage = buffer.substring(0, 5 + length);
+      buffer = buffer.substring(5 + length);
+      
+      const payload = fullMessage.substring(5);
+      const svc = payload.substring(0, 5);
+      const datos = payload.substring(5);
+      
+      // Manejar respuestas del bus (confirmaciones de registro)
+      if (!isRegistered && svc === code) {
+        if (datos === 'OK') {
+          console.log(`[PerfilService:${code}] ✅ Registrado exitosamente`);
+          isRegistered = true;
+        } else if (datos.startsWith('NK')) {
+          console.error(`[PerfilService:${code}] ❌ Error de registro: ${datos}`);
+        }
+        continue;
+      }
+      
+      // Procesar solicitudes de clientes solo si estamos registrados
+      if (isRegistered && svc === code) {
+        // Verificar si es una respuesta del bus que debemos ignorar
+        if (datos === 'OK' || datos.startsWith('NK')) {
+          console.log(`[PerfilService:${code}] Ignorando respuesta del bus: ${datos}`);
+          continue;
+        }
+        
+        let status = 'OK', body = '';
+        try {
+          body = await handleMessage(svc, datos);
+        } catch (e) {
+          status = 'NK';
+          body = e.message;
+        }
+        
+        sock.write(frame(svc, status, body));
+      }
+    }
   });
 
-  sock.on('error',  e => console.error(`[PerfilService:${code}] ❌`, e.message));
-  sock.on('close', () => console.log(`[PerfilService:${code}] 🔌 cerrado`));
+  sock.on('error', e => {
+    console.error(`[PerfilService:${code}] ❌`, e.message);
+    isRegistered = false;
+  });
+  
+  sock.on('close', () => {
+    console.log(`[PerfilService:${code}] 🔌 cerrado`);
+    isRegistered = false;
+  });
 }
 
 ['prfl1', 'prfl2', 'prfl3'].forEach(registerService);

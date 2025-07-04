@@ -176,6 +176,7 @@ async function handleAsaiRequest(socket, messageContent) {
 function createAsaiWorker() {
     const workerSocket = new net.Socket();
     let buffer = '';
+    let isRegistered = false;
 
     workerSocket.connect({ host: BUS_HOST, port: BUS_PORT }, () => {
         console.log(`[Worker ${ASAI_SERVICE_NAME}] Conectado para recibir peticiones.`);
@@ -195,20 +196,52 @@ function createAsaiWorker() {
             buffer = buffer.substring(5 + length);
             const destination = fullPayload.substring(0, 5);
 
-            if (destination === ASAI_SERVICE_NAME) {
-                // Pasamos el socket del worker para poder responder por el mismo canal.
-                handleAsaiRequest(workerSocket, fullPayload.substring(5));
+            // Manejar respuestas del bus
+            if (!isRegistered && destination === ASAI_SERVICE_NAME) {
+                const response = fullPayload.substring(5);
+                if (response === 'OK') {
+                    console.log(`[Worker ${ASAI_SERVICE_NAME}] Registrado exitosamente en el bus`);
+                    isRegistered = true;
+                } else if (response.startsWith('NK')) {
+                    console.error(`[Worker ${ASAI_SERVICE_NAME}] Error de registro: ${response}`);
+                    // Intentar reconectar después de un tiempo
+                    setTimeout(() => {
+                        workerSocket.destroy();
+                    }, 5000);
+                }
+                continue;
+            }
+
+            // Procesar solicitudes de clientes solo si estamos registrados
+            if (isRegistered && destination === ASAI_SERVICE_NAME) {
+                const messageContent = fullPayload.substring(5);
+                
+                // Verificar si el mensaje es una respuesta del bus (OK/NK)
+                if (messageContent === 'OK' || messageContent.startsWith('NK')) {
+                    console.log(`[Worker ${ASAI_SERVICE_NAME}] Respuesta del bus ignorada: ${messageContent}`);
+                    continue;
+                }
+                
+                // Procesar solo si parece ser una solicitud de cliente (debe ser JSON)
+                try {
+                    JSON.parse(messageContent);
+                    handleAsaiRequest(workerSocket, messageContent);
+                } catch (error) {
+                    console.log(`[Worker ${ASAI_SERVICE_NAME}] Mensaje no es JSON válido, ignorando: ${messageContent.substring(0, 50)}...`);
+                }
             }
         }
     });
 
     workerSocket.on('close', () => {
         console.log(`[Worker ${ASAI_SERVICE_NAME}] Conexión de escucha cerrada. Reintentando en 5 segundos...`);
+        isRegistered = false;
         setTimeout(createAsaiWorker, 5000);
     });
 
     workerSocket.on('error', (err) => {
         console.error(`[Worker ${ASAI_SERVICE_NAME}] Error de socket: ${err.message}`);
+        isRegistered = false;
         // La conexión se cerrará y el evento 'close' se encargará de reconectar.
     });
 }
