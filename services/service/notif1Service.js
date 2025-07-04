@@ -41,26 +41,35 @@ async function startService() {
     serviceSocket.on('connect', () => {
         console.log(`✅ [${SERVICE_NAME}Service] Conectado al bus en ${BUS_PORT}.`);
         const registerMessage = header(10) + 'sinit'.padEnd(5) + SERVICE_NAME.padEnd(5);
+        console.log(`[${SERVICE_NAME}Service] Enviando registro: "${registerMessage}"`);
         serviceSocket.write(registerMessage);
     });
 
     let buffer = '';
     serviceSocket.on('data', (data) => {
         buffer += data.toString();
+        console.log(`[${SERVICE_NAME}Service] 📨 Datos recibidos del bus: "${data.toString()}"`);
+        console.log(`[${SERVICE_NAME}Service] 📦 Buffer actual length: ${buffer.length}`);
 
         while (buffer.length >= 5) {
             const length = parseInt(buffer.substring(0, 5), 10);
-            if (isNaN(length) || length <= 0 || buffer.length < 5 + length) break;
+            if (isNaN(length) || length <= 0 || buffer.length < 5 + length) {
+                console.log(`[${SERVICE_NAME}Service] ⏳ Esperando más datos. Length esperado: ${length}, buffer actual: ${buffer.length}`);
+                break;
+            }
             
             const fullMessage = buffer.substring(0, 5 + length);
             buffer = buffer.substring(5 + length);
+            console.log(`[${SERVICE_NAME}Service] 📄 Mensaje completo extraído: "${fullMessage}"`);
 
             const serviceReceived = fullMessage.substring(5, 10).trim();
             const contentAfterService = fullMessage.substring(10);
+            console.log(`[${SERVICE_NAME}Service] 🎯 Servicio destinatario: "${serviceReceived}"`);
+            console.log(`[${SERVICE_NAME}Service] 📝 Contenido después del servicio: "${contentAfterService.substring(0, 100)}..."`);
             
             // Ignoramos respuestas del bus (tienen OK/NK)
             if (contentAfterService.startsWith('OK') || contentAfterService.startsWith('NK')) {
-                console.log(`[${SERVICE_NAME}Service] Ignorando respuesta del bus.`);
+                console.log(`[${SERVICE_NAME}Service] Respuesta del bus: ${contentAfterService.substring(0, 20)}...`);
                 continue;
             }
             
@@ -80,16 +89,34 @@ async function startService() {
             if (serviceReceived === SERVICE_NAME) {
                 (async () => {
                     try {
-                        const requestData = JSON.parse(payloadString);
+                        console.log(`[${SERVICE_NAME}Service] Raw payload: "${payloadString}"`);
+                        console.log(`[${SERVICE_NAME}Service] Payload length: ${payloadString.length}`);
+                        
+                        // Estrategia más robusta para limpiar el JSON
+                        let cleanPayload = payloadString.trim();
+                        
+                        // Buscar el primer '{' y el último '}' para extraer el JSON válido
+                        const firstBrace = cleanPayload.indexOf('{');
+                        const lastBrace = cleanPayload.lastIndexOf('}');
+                        
+                        if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
+                            throw new Error('No se encontró JSON válido en el payload');
+                        }
+                        
+                        const validJson = cleanPayload.substring(firstBrace, lastBrace + 1);
+                        console.log(`[${SERVICE_NAME}Service] JSON extraído length: ${validJson.length}`);
+                        console.log(`[${SERVICE_NAME}Service] JSON preview: ${validJson.substring(0, 100)}...`);
+                        
+                        const requestData = JSON.parse(validJson);
                         if (requestData.action === 'send_email') {
                             const resultado = await sendEmail(requestData.payload);
-                            sendResponse(serviceSocket, resultado, clientId); // Solo responde si hay ID
+                            sendResponse(serviceSocket, resultado, clientId);
                         } else {
                             throw new Error(`Acción no reconocida: '${requestData.action}'`);
                         }
                     } catch (error) {
                         console.error(`❌ [${SERVICE_NAME}Service] ERROR:`, error.message);
-                        sendError(serviceSocket, error.message, clientId); // Solo responde si hay ID
+                        sendError(serviceSocket, error.message, clientId);
                     }
                 })();
             }
