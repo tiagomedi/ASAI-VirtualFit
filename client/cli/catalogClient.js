@@ -8,6 +8,7 @@ const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
 const CATALOG_DIRECT_PORT = 5002;
 const CATALOG_PAGE_SIZE = 4;
+const WISHLIST_PAGE_SIZE = 4;
 
 function sendRequest(serviceName, requestPayload) {
     return new Promise((resolve, reject) => {
@@ -18,9 +19,9 @@ function sendRequest(serviceName, requestPayload) {
         clientSocket.setEncoding('utf8');
         
         const timeout = setTimeout(() => {
-            reject(new Error(`Timeout de 5s para la operación con '${serviceName}' en el puerto ${targetPort}`));
+            reject(new Error(`Timeout de 10s para la operación con '${serviceName}' en el puerto ${targetPort}`));
             clientSocket.destroy();
-        }, 5000);
+        }, 10000);
 
         clientSocket.on('error', (err) => {
             clearTimeout(timeout);
@@ -41,7 +42,11 @@ function sendRequest(serviceName, requestPayload) {
         });
 
         let responseBuffer = '';
+        let processingComplete = false;
+        
         clientSocket.on('data', (data) => {
+            if (processingComplete) return;
+            
             responseBuffer += data;
             const headerSize = 5;
             let expectedLength = -1;
@@ -50,22 +55,39 @@ function sendRequest(serviceName, requestPayload) {
                 if (isDirect) {
                      expectedLength = parseInt(responseBuffer.substring(0, headerSize), 10);
                 } else {
-                    // La respuesta del bus tiene un formato más complejo que no manejaremos aquí
-                    // por simplicidad, ya que el bypass es para el catálogo.
-                    // Esta parte se deja para los servicios que sí funcionan vía bus.
-                    // Para este problema, nos enfocamos en el caso 'directo'.
-                    const busResponseHeader = responseBuffer.substring(0, headerSize);
-                    expectedLength = parseInt(busResponseHeader, 10);
+                    // Respuesta del bus: formato completo
+                    expectedLength = parseInt(responseBuffer.substring(0, headerSize), 10);
                 }
 
                 if (!isNaN(expectedLength) && responseBuffer.length >= headerSize + expectedLength) {
+                    processingComplete = true;
                     let jsonString;
+                    let statusFromResponse = 'OK'; // Por defecto para conexiones directas
+                    
                     if(isDirect) {
                         jsonString = responseBuffer.substring(headerSize, headerSize + expectedLength);
                     } else {
-                        // Asumimos que el JSON empieza después del OK y el nombre del servicio.
-                        const jsonStartIndex = responseBuffer.search(/[{[]/);
-                        jsonString = responseBuffer.substring(jsonStartIndex, headerSize + expectedLength);
+                        // Respuesta del bus: parsear formato completo
+                        const fullResponse = responseBuffer.substring(headerSize, headerSize + expectedLength);
+                        // Formato: [servicio 5 chars][status 2 chars][JSON]
+                        const serviceFromResponse = fullResponse.substring(0, 5);
+                        statusFromResponse = fullResponse.substring(5, 7);
+                        jsonString = fullResponse.substring(7);
+                    }
+
+                    // Verificar si el status indica error
+                    if (statusFromResponse !== 'OK' && statusFromResponse.trim() !== 'OK') {
+                        clearTimeout(timeout);
+                        try {
+                            const errorData = JSON.parse(jsonString);
+                            const errorMessage = errorData.error || errorData.message || `Error del servicio (Status: ${statusFromResponse})`;
+                            reject(new Error(errorMessage));
+                        } catch (e) {
+                            reject(new Error(`Error del servicio (Status: ${statusFromResponse}): ${jsonString}`));
+                        } finally {
+                            clientSocket.end();
+                        }
+                        return;
                     }
 
                     try {
@@ -74,7 +96,7 @@ function sendRequest(serviceName, requestPayload) {
                         resolve(jsonData);
                     } catch (e) {
                         clearTimeout(timeout);
-                        reject(new Error("Error al parsear JSON de respuesta."));
+                        reject(new Error(`Error al parsear JSON de respuesta: ${e.message}`));
                     } finally {
                         clientSocket.end();
                     }
@@ -126,37 +148,93 @@ async function productActionMenu(inquirer, displayedProducts, userId) {
     }
 }
 async function manageWishlist(inquirer, userId) {
+    let currentPage = 1;
     let goBack = false;
+
     while (!goBack) {
         try {
-            const wishlistProducts = await sendRequest('deseo', { action: 'view', user_id: userId });
-            displayProducts(wishlistProducts, 'Mi Lista de Deseos');
+            const wishlistResponse = await sendRequest('deseo', { 
+                action: 'view', 
+                user_id: userId, 
+                page: currentPage, 
+                limit: WISHLIST_PAGE_SIZE 
+            });
             
-            if (!wishlistProducts || wishlistProducts.length === 0) {
+            if (!wishlistResponse || !wishlistResponse.products) {
+                console.log("\n❌ Error: Respuesta inválida del servicio de lista de deseos.");
                 goBack = true;
                 continue;
             }
+
+            const { products, totalPages, totalProducts } = wishlistResponse;
+            const title = `Mi Lista de Deseos (Página ${currentPage}/${totalPages} - ${totalProducts} productos en total)`;
+            displayProducts(products, title);
+            
+            if (!products || products.length === 0) {
+                if (currentPage === 1) {
+                    console.log("\n💔 Tu lista de deseos está vacía.");
+                    await inquirer.prompt([{ type: 'list', name: 'continue', message: 'Presiona Enter para volver.', choices: ['Ok'] }]);
+                }
+                goBack = true;
+                continue;
+            }
+
+            // Crear opciones del menú
+            const menuChoices = [];
+            
+            // Opciones de navegación
+            if (currentPage > 1) {
+                menuChoices.push({ name: '⬅️  Página Anterior', value: 'prev_page' });
+            }
+            if (currentPage < totalPages) {
+                menuChoices.push({ name: 'Página Siguiente ➡️', value: 'next_page' });
+            }
+            
+            // Separador si hay opciones de navegación
+            if (menuChoices.length > 0) {
+                menuChoices.push(new inquirer.Separator());
+            }
+            
+            // Opciones de acción
+            menuChoices.push({ name: '❌ Eliminar un ítem', value: 'remove' });
+            menuChoices.push(new inquirer.Separator());
+            menuChoices.push({ name: '↩️ Volver al menú principal', value: 'back' });
 
             const { action } = await inquirer.prompt([{
-                type: 'list', name: 'action', message: 'Opciones de la lista de deseos:',
-                choices: [
-                    { name: '❌ Eliminar un ítem', value: 'remove' },
-                    { name: '↩️ Volver al menú principal', value: 'back' },
-                ]
+                type: 'list', 
+                name: 'action', 
+                message: 'Opciones de la lista de deseos:',
+                choices: menuChoices
             }]);
 
-            if (action === 'back') {
-                goBack = true;
-                continue;
-            }
-
-            if (action === 'remove') {
-                const { product_to_remove } = await inquirer.prompt([{
-                    type: 'list', name: 'product_to_remove', message: 'Selecciona el ítem a eliminar:',
-                    choices: wishlistProducts.map((p, i) => ({ name: `${i+1}. ${p.nombre}`, value: p._id.toString() }))
-                }]);
-                const response = await sendRequest('deseo', { action: 'remove', user_id: userId, producto_id: product_to_remove });
-                console.log(`✅ ¡ÉXITO! ${response.message}`);
+            switch (action) {
+                case 'back':
+                    goBack = true;
+                    break;
+                case 'prev_page':
+                    currentPage--;
+                    break;
+                case 'next_page':
+                    currentPage++;
+                    break;
+                case 'remove':
+                    const { product_to_remove } = await inquirer.prompt([{
+                        type: 'list', 
+                        name: 'product_to_remove', 
+                        message: 'Selecciona el ítem a eliminar:',
+                        choices: products.map((p, i) => ({ 
+                            name: `${i+1}. ${p.nombre}`, 
+                            value: p._id.toString() 
+                        }))
+                    }]);
+                    const response = await sendRequest('deseo', { 
+                        action: 'remove', 
+                        user_id: userId, 
+                        producto_id: product_to_remove 
+                    });
+                    console.log(`✅ ¡ÉXITO! ${response.message}`);
+                    // Permanecer en la misma página después de eliminar
+                    break;
             }
         } catch (error) {
             console.error("\n❌ Error gestionando la lista de deseos:", error.message);
@@ -258,7 +336,7 @@ async function main() {
         while (!exit) {
             const { mainMenuAction } = await inquirer.prompt([{ type: 'list', name: 'mainMenuAction', message: '🔭 ¿Qué deseas hacer?', choices: [{ name: '📚 Ver Catálogo/Buscar/Filtrar', value: 'catalog' }, { name: '💖 Ver mi Lista de Deseos', value: 'wishlist' }, new inquirer.Separator(), { name: '🚪 Salir', value: 'exit' }] }]);
             if (mainMenuAction === 'exit') { exit = true; continue; }
-            if (mainMenuAction === 'wishlist') { /* await manageWishlist(inquirer, currentUser._id.toString()); */ continue; }
+            if (mainMenuAction === 'wishlist') { await manageWishlist(inquirer, currentUser._id.toString()); continue; }
             const { catalogAction } = await inquirer.prompt([{ type: 'list', name: 'catalogAction', message: 'Acciones del catálogo:', choices: [{ name: '📚 Ver Catálogo Completo (Paginado)', value: 'list' }, { name: '🔍 Buscar un producto', value: 'search' }, { name: '📊 Aplicar Filtros', value: 'filter' }] }]);
             
             if (catalogAction === 'list') {

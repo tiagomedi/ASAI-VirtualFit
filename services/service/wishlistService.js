@@ -12,43 +12,21 @@ const SERVICE_NAME = 'deseo';
 function header(n) { return String(n).padStart(5, '0'); }
 
 function registerService(socket) {
-    const registerCommand = 'sinit'.padEnd(5, ' ');
-    const serviceIdentifier = SERVICE_NAME.padEnd(5, ' ');
-    const payload = registerCommand + serviceIdentifier;
-    const fullMessage = header(payload.length) + payload;
-    console.log(`[${SERVICE_NAME}Service] -> Enviando mensaje de registro: "${fullMessage}"`);
-    socket.write(fullMessage);
+    const registerMessage = header(10) + 'sinit'.padEnd(5) + SERVICE_NAME.padEnd(5);
+    socket.write(registerMessage);
 }
 
 function sendResponse(socket, data) {
-    const service = SERVICE_NAME.padEnd(5, ' ');
-    const status = "OK"; // El bus REQUIERE este estado para reenviar la respuesta.
-    const jsonPayload = JSON.stringify(data);
-    
-    const payload = status + jsonPayload;
-
-    const messageLength = service.length + Buffer.byteLength(payload, 'utf8');
-    const messageHeader = header(messageLength);
-
-    const fullMessage = messageHeader + service + payload;
-    
-    console.log(`[${SERVICE_NAME}Service] -> Enviando respuesta (CON OK) al bus: ${fullMessage.substring(0, 150)}...`);
+    const resPayload = JSON.stringify(data);
+    const serviceHeader = SERVICE_NAME.padEnd(5, ' ');
+    const fullMessage = header(serviceHeader.length + resPayload.length) + serviceHeader + resPayload;
     socket.write(fullMessage);
 }
 
 function sendError(socket, errorMessage) {
-    const service = SERVICE_NAME.padEnd(5, ' ');
-    const status = "OK";
-    const errorResponse = { status: 'error', message: errorMessage };
-    const jsonPayload = JSON.stringify(errorResponse);
-
-    const payload = status + jsonPayload;
-
-    const messageLength = service.length + Buffer.byteLength(payload, 'utf8');
-    const messageHeader = header(messageLength);
-
-    const fullMessage = messageHeader + service + payload;
-    console.log(`[${SERVICE_NAME}Service] -> Enviando ERROR (CON OK) al bus: ${fullMessage}`);
+    const errPayload = JSON.stringify({ error: errorMessage });
+    const serviceHeader = SERVICE_NAME.padEnd(5, ' ');
+    const fullMessage = header(serviceHeader.length + errPayload.length) + serviceHeader + errPayload;
     socket.write(fullMessage);
 }
 // --- Función Principal del Servicio (ya robusta) ---
@@ -58,7 +36,6 @@ async function startService() {
     const connectToBus = () => serviceSocket.connect(BUS_PORT, BUS_HOST);
 
     serviceSocket.on('connect', () => {
-        console.log(`[${SERVICE_NAME}Service] Conectado al bus en ${BUS_PORT}.`);
         registerService(serviceSocket);
     });
 
@@ -74,11 +51,14 @@ async function startService() {
             
             const messageToProcess = buffer.substring(0, totalMessageLength);
             buffer = buffer.substring(totalMessageLength);
-            console.log(`\n[${SERVICE_NAME}Service] <- Mensaje completo recibido: ${messageToProcess.substring(0, 200)}...`);
-
+            // Ignorar respuestas OK/NK del bus (confirmaciones de registro)
             const statusCheck = messageToProcess.substring(10, 12);
             if (statusCheck === 'OK' || statusCheck === 'NK') {
-                console.log(`[${SERVICE_NAME}Service] Mensaje de estado del bus ignorado.`);
+                continue;
+            }
+
+            // Verificar si es un mensaje válido de solicitud
+            if (messageToProcess.length < 15) {
                 continue;
             }
 
@@ -89,7 +69,7 @@ async function startService() {
                     let result;
                     switch (req.action) {
                         case 'view':
-                            result = await wishlistLogic.verListaDeDeseos(req.user_id);
+                            result = await wishlistLogic.verListaDeDeseos(req.user_id, req.page, req.limit);
                             break;
                         case 'add':
                             result = await wishlistLogic.agregarALista(req.user_id, req.producto_id);
@@ -102,15 +82,14 @@ async function startService() {
                     }
                     sendResponse(serviceSocket, result);
                 } catch (error) {
-                    console.error(`[${SERVICE_NAME}Service] ERROR procesando solicitud:`, error.message);
                     sendError(serviceSocket, error.message);
                 }
             })();
         }
     });
 
-    serviceSocket.on('close', () => { console.log(`[${SERVICE_NAME}Service] Conexión cerrada. Reintentando...`); buffer = ''; setTimeout(connectToBus, 5000); });
-    serviceSocket.on('error', (err) => console.error(`[${SERVICE_NAME}Service] Error de conexión:`, err.message));
+    serviceSocket.on('close', () => { buffer = ''; setTimeout(connectToBus, 5000); });
+    serviceSocket.on('error', (err) => {});
 
     connectToBus();
 }
