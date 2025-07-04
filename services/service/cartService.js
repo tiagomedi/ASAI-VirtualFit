@@ -1,79 +1,38 @@
-// services/cartService.js
+// services/service/cartService.js
+// VERSIÓN FINAL Y CORRECTA - Servidor Autónomo
 const { connectDB } = require('../../database/db.js');
 const net = require('net');
 const cartLogic = require('./cartLogic.js');
 
-const BUS_HOST = 'localhost';
-const BUS_PORT = 5001;
 const SERVICE_NAME = 'carro';
+const DIRECT_HOST = 'localhost';
+const DIRECT_PORT = 5004; // Puerto directo para el cliente
 
-// --- Funciones de Comunicación (Robustas) ---
-function header(n) { return String(n).padStart(5, '0'); }
-
-function registerService(socket) {
-    const registerCommand = 'sinit'.padEnd(5, ' ');
-    const serviceIdentifier = SERVICE_NAME.padEnd(5, ' ');
-    const payload = registerCommand + serviceIdentifier;
-    const fullMessage = header(payload.length) + payload;
-    console.log(`[${SERVICE_NAME}Service] -> Enviando mensaje de registro: "${fullMessage}"`);
-    socket.write(fullMessage);
-}
-
-function sendResponse(socket, data) {
-    const service = SERVICE_NAME.padEnd(5, ' ');
-    const payload = JSON.stringify(data);
-    const fullMessage = header(service.length + payload.length) + service + payload;
-    console.log(`[${SERVICE_NAME}Service] -> Enviando respuesta: ${fullMessage.substring(0, 150)}...`);
-    socket.write(fullMessage);
-}
-
-function sendError(socket, errorMessage) {
-    const service = SERVICE_NAME.padEnd(5, ' ');
-    const errorResponse = { status: 'error', message: errorMessage };
-    const payload = JSON.stringify(errorResponse);
-    const fullMessage = header(service.length + payload.length) + service + payload;
-    console.log(`[${SERVICE_NAME}Service] -> Enviando ERROR: ${fullMessage}`);
-    socket.write(fullMessage);
-}
-
-
-// --- Función Principal del Servicio ---
-async function startService() {
-    await connectDB();
-    const serviceSocket = new net.Socket();
-    const connectToBus = () => serviceSocket.connect(BUS_PORT, BUS_HOST);
-
-    serviceSocket.on('connect', () => {
-        console.log(`[${SERVICE_NAME}Service] Conectado al bus en ${BUS_PORT}.`);
-        registerService(serviceSocket);
-    });
-
-    // ***** INICIO DE LA CORRECCIÓN CRÍTICA *****
-    // Implementación del búfer de lectura robusto
+/**
+ * Maneja una conexión directa de un cliente.
+ * @param {net.Socket} socket El socket del cliente conectado.
+ */
+async function handleDirectConnection(socket) {
+    const clientAddress = `${socket.remoteAddress}:${socket.remotePort}`;
+    
     let buffer = '';
-    serviceSocket.on('data', (data) => {
-        buffer += data.toString();
+    socket.setEncoding('utf8');
+
+    socket.on('data', (data) => {
+        buffer += data;
         while (true) {
-            if (buffer.length < 5) break;
+            if (buffer.length < 5) break; 
             const length = parseInt(buffer.substring(0, 5), 10);
-            if (isNaN(length)) { buffer = ''; break; }
+            if (isNaN(length)) { buffer = ''; socket.end(); break; }
             const totalMessageLength = 5 + length;
             if (buffer.length < totalMessageLength) break;
             
-            const messageToProcess = buffer.substring(0, totalMessageLength);
+            const messageToProcess = buffer.substring(5, totalMessageLength);
             buffer = buffer.substring(totalMessageLength);
-            console.log(`\n[${SERVICE_NAME}Service] <- Mensaje completo recibido: ${messageToProcess.substring(0,200)}...`);
 
-            const statusCheck = messageToProcess.substring(10, 12);
-            if (statusCheck === 'OK' || statusCheck === 'NK') {
-                console.log(`[${SERVICE_NAME}Service] Mensaje de estado del bus ignorado.`);
-                continue;
-            }
-
-            const messageContent = messageToProcess.substring(10);
             (async () => {
                 try {
-                    const req = JSON.parse(messageContent);
+                    const req = JSON.parse(messageToProcess);
                     let result;
                     switch (req.action) {
                         case 'view':
@@ -89,23 +48,48 @@ async function startService() {
                             result = await cartLogic.eliminarDelCarrito(req.user_id, req.producto_variacion_id);
                             break;
                         default:
-                            throw new Error(`Acción desconocida en cartService: ${req.action}`);
+                            throw new Error(`Acción directa desconocida: ${req.action}`);
                     }
-                    sendResponse(serviceSocket, result);
+                    
+                    const payload = JSON.stringify(result);
+                    const header = String(payload.length).padStart(5, '0');
+                    socket.write(header + payload);
+                    console.log(`[${SERVICE_NAME}Service] ✅ Respuesta enviada exitosamente`);
+
                 } catch (error) {
-                    console.error(`[${SERVICE_NAME}Service] ERROR procesando solicitud:`, error.message);
-                    sendError(serviceSocket, error.message);
+                    console.error(`[${SERVICE_NAME}Service] ❌ Error procesando solicitud:`, error.message);
+                    const errorResponse = { status: 'error', message: error.message };
+                    const payload = JSON.stringify(errorResponse);
+                    const header = String(payload.length).padStart(5, '0');
+                    socket.write(header + payload);
+                } finally {
+                    socket.end();
                 }
             })();
         }
     });
-    // ***** FIN DE LA CORRECCIÓN CRÍTICA *****
 
+    socket.on('error', (err) => {
+        console.error(`[${SERVICE_NAME}Service] Error en socket:`, err.message);
+    });
+    
+    socket.on('close', () => {
+        console.log(`[${SERVICE_NAME}Service] Cliente desconectado: ${clientAddress}`);
+    });
+}
 
-    serviceSocket.on('close', () => { console.log(`[${SERVICE_NAME}Service] Conexión cerrada. Reintentando...`); buffer = ''; setTimeout(connectToBus, 5000); });
-    serviceSocket.on('error', (err) => console.error(`[${SERVICE_NAME}Service] Error de conexión:`, err.message));
+async function startService() {
+    await connectDB();
+    console.log(`[${SERVICE_NAME}Service] Conectado a la base de datos.`);
+    
+    const directServer = net.createServer(handleDirectConnection);
+    directServer.listen(DIRECT_PORT, DIRECT_HOST, () => {
+        console.log(`[${SERVICE_NAME}Service] ✅ Escuchando conexiones DIRECTAS en ${DIRECT_HOST}:${DIRECT_PORT}`);
+    });
 
-    connectToBus();
+    directServer.on('error', (err) => {
+        console.error(`[${SERVICE_NAME}Service] Error en el servidor principal:`, err.message);
+    });
 }
 
 startService();

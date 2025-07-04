@@ -2,60 +2,65 @@ const net = require('net');
 const { connectDB, mongoose } = require('../../database/db.js');
 const User = require('../../database/models/user.model.js');
 
-const BUS_HOST = 'localhost';
-const BUS_PORT = 5001;
+const CART_HOST = 'localhost';
+const CART_DIRECT_PORT = 5004;
 
-let clientSocket;
-let responsePromise = {}; 
-function header(n) { return String(n).padStart(5, '0'); }
-
-function sendMessage(serviceName, data) {
-    const service = serviceName.padEnd(5, ' ');
-    const fullMessage = header(service.length + data.length) + service + data;
-    console.log(`\n[Cliente] -> Enviando a '${serviceName}' (${fullMessage.length} bytes)`);
-    clientSocket.write(fullMessage);
-}
-
-// Función que envía una solicitud y devuelve una promesa
-function sendRequest(serviceName, requestPayload) {
+function sendRequest(requestPayload) {
     return new Promise((resolve, reject) => {
-        if (responsePromise && responsePromise.reject) {
-            console.warn("[Cliente] Cancelando promesa anterior antes de enviar nueva solicitud.");
-            responsePromise.reject(new Error("Solicitud cancelada por envío de nueva solicitud."));
-            responsePromise = {}; // Limpiar inmediatamente
-        }
-
-        // Almacenamos las funciones de resolución/rechazo para usarlas en el 'data' handler
-        responsePromise = { resolve, reject, serviceName: serviceName }; // Guardar el nombre del servicio esperado
+        const clientSocket = new net.Socket();
+        clientSocket.setEncoding('utf8');
         
-        // Convertimos el payload a JSON string antes de enviarlo
-        const payloadString = JSON.stringify(requestPayload);
-        
-        // Enviamos el mensaje formateado
-        sendMessage(serviceName, payloadString);
-
-        const timeoutDuration = 5000; // 5 segundos 
         const timeout = setTimeout(() => {
-            if (responsePromise && responsePromise.reject && responsePromise.serviceName === serviceName) {
-                console.error(`[Cliente] Timeout de ${timeoutDuration}ms alcanzado para servicio '${serviceName}'.`);
-                responsePromise.reject(new Error(`Timeout: El servidor ${serviceName} no respondió a tiempo (${timeoutDuration}ms).`));
-                responsePromise = {}; 
-            }
-        }, timeoutDuration); 
+            reject(new Error(`Timeout de 10s para la operación con el carrito en el puerto ${CART_DIRECT_PORT}`));
+            clientSocket.destroy();
+        }, 10000);
 
-        const originalResolve = resolve;
-        const originalReject = reject;
+        clientSocket.on('error', (err) => {
+            clearTimeout(timeout);
+            reject(new Error(`Error de conexión al carrito en ${CART_HOST}:${CART_DIRECT_PORT} - ${err.message}`));
+        });
         
-        responsePromise.resolve = (value) => { 
-            clearTimeout(timeout); 
-            originalResolve(value); 
-            responsePromise = {}; 
-        };
-        responsePromise.reject = (err) => { 
-            clearTimeout(timeout); 
-            originalReject(err); 
-            responsePromise = {}; 
-        };
+        clientSocket.connect(CART_DIRECT_PORT, CART_HOST, () => {
+            const payload = JSON.stringify(requestPayload);
+            const fullMessage = String(payload.length).padStart(5, '0') + payload;
+            clientSocket.write(fullMessage);
+        });
+
+        let responseBuffer = '';
+        let processingComplete = false;
+        
+        clientSocket.on('data', (data) => {
+            if (processingComplete) return;
+            
+            responseBuffer += data;
+            const headerSize = 5;
+
+            if (responseBuffer.length >= headerSize) {
+                const expectedLength = parseInt(responseBuffer.substring(0, headerSize), 10);
+
+                if (!isNaN(expectedLength) && responseBuffer.length >= headerSize + expectedLength) {
+                    processingComplete = true;
+                    const jsonString = responseBuffer.substring(headerSize, headerSize + expectedLength);
+
+                    try {
+                        const jsonData = JSON.parse(jsonString);
+                        clearTimeout(timeout);
+                        clientSocket.end();
+                        
+                        // Verificar si es un error
+                        if (jsonData.status === 'error') {
+                            reject(new Error(jsonData.message || 'Error del servicio de carrito'));
+                        } else {
+                            resolve(jsonData);
+                        }
+                    } catch (e) {
+                        clearTimeout(timeout);
+                        clientSocket.end();
+                        reject(new Error(`Error al parsear JSON de respuesta: ${e.message}`));
+                    }
+                }
+            }
+        });
     });
 }
 
@@ -63,97 +68,7 @@ async function startClient() {
     try {
         await connectDB();
         const inquirer = (await import('inquirer')).default;
-        clientSocket = new net.Socket();
-
-        // Conectar el socket al bus
-        clientSocket.connect(BUS_PORT, BUS_HOST, () => {
-            console.log(`✅ [Cliente] Conectado al bus en ${BUS_PORT}.`);
-            // Una vez conectado, mostramos el menú principal al usuario
-            mainMenu(inquirer);
-        });
-
-        // --- MANEJADOR CENTRALIZADO DE DATOS ---
-        let buffer = '';
-        clientSocket.on('data', (data) => {
-            buffer += data.toString();
-
-            while (buffer.length >= 5) {
-                const header = buffer.substring(0, 5);
-                const length = parseInt(header, 10);
-
-                if (isNaN(length) || length <= 0 || length > 100000) { 
-                    console.error(`❌ [Cliente] Invalid or negative header length "${header}" (Parsed: ${length}). Clearing buffer.`);
-                    buffer = ''; 
-                    break;
-                }
-
-                const totalMessageLength = 5 + length;
-                if (length > 100000) { 
-                    console.error(`❌ [Cliente] Excessive message length ${length}. Possible buffer corruption. Clearing buffer.`);
-                    buffer = '';
-                    break;
-                }
-
-
-                if (buffer.length < totalMessageLength) {
-                    break;
-                }
-                const fullMessage = buffer.substring(0, totalMessageLength);
-                buffer = buffer.slice(totalMessageLength); 
-
-                if (fullMessage.length < 12) { 
-                    console.warn(`[Cliente] Message too short (${fullMessage.length} bytes) to contain service name and status. Ignoring.`);
-                    continue; 
-                }
-
-                const serviceName = fullMessage.substring(5, 10).trim(); 
-                const status = fullMessage.substring(10, 12).trim(); 
-                const messageContent = fullMessage.substring(12);
-                if (responsePromise && responsePromise.resolve && responsePromise.reject && serviceName === responsePromise.serviceName) {
-
-                    try {
-                        const responseData = JSON.parse(messageContent);
-                        if (status === 'OK') {
-                            if (responseData && responseData.error) {
-                                responsePromise.reject(new Error(responseData.error));
-                            } else {
-                                responsePromise.resolve(responseData);
-                            }
-                        } else if (status === 'NK') { 
-                            const errorMessage = (responseData && responseData.error) ? responseData.error : messageContent;
-                            responsePromise.reject(new Error(`El bus/servicio ${serviceName} reportó un error (NK): ${errorMessage}`));
-                        } else {
-                            console.warn(`[Cliente] Message received with unknown status ('${status}') from service '${serviceName}'. Ignoring.`);
-                        }
-                    } catch (e) {
-                        responsePromise.reject(new Error(`Error al procesar respuesta JSON del servidor '${serviceName}': ${e.message}. Mensaje original: ${messageContent}`));
-                    }
-                } else {
-                    console.log(`[Cliente] -> Message received for service '${serviceName}' with status '${status}' but no matching promise pending. Ignoring.`);
-                }
-            }
-        });
-
-        clientSocket.on('close', () => {
-            console.log('\n[Cliente] Conexión cerrada.');
-            if (responsePromise && responsePromise.reject) {
-                responsePromise.reject(new Error("Conexión cerrada inesperadamente por el servidor."));
-                responsePromise = {};
-            }
-            if (mongoose.connection.readyState === 1) mongoose.connection.close();
-            process.exit(0);
-        });
-
-        clientSocket.on('error', (err) => {
-            console.error('\n❌ [Cliente] Error de conexión:', err.message);
-            if (responsePromise && responsePromise.reject) {
-                responsePromise.reject(new Error(`Error de conexión de socket: ${err.message}`));
-                responsePromise = {};
-            }
-            if (mongoose.connection.readyState === 1) mongoose.connection.close();
-            process.exit(1);
-        });
-
+        await mainMenu(inquirer);
     } catch (error) {
         console.error(`\n❌ Error durante la inicialización del cliente: ${error.message}`);
         process.exit(1);
@@ -197,14 +112,10 @@ async function mainMenu(inquirer) {
         console.error(`\n❌ Error en el menú principal: ${error.message}`);
     } finally {
         console.log("\n👋 ¡Hasta luego!");
-        setTimeout(() => {
-            if (clientSocket && !clientSocket.destroyed) {
-                clientSocket.end();
-            }
-        }, 500); 
+        if (mongoose.connection.readyState === 1) mongoose.connection.close();
+        process.exit(0);
     }
 }
-
 
 function displayCart(cart) {
     console.log("\n--- 🛒 Tu Carrito de Compras ---");
@@ -225,6 +136,70 @@ function displayCart(cart) {
     return { itemCount: cartObj.items.length, total: total };
 }
 
+// Función para enviar request al servicio de pagos usando el bus
+function sendPaymentRequest(requestPayload) {
+    return new Promise((resolve, reject) => {
+        const clientSocket = new net.Socket();
+        clientSocket.setEncoding('utf8');
+        
+        const timeout = setTimeout(() => {
+            reject(new Error(`Timeout de 10s para la operación con pagos en el puerto 5001`));
+            clientSocket.destroy();
+        }, 10000);
+
+        clientSocket.on('error', (err) => {
+            clearTimeout(timeout);
+            reject(new Error(`Error de conexión al bus en localhost:5001 - ${err.message}`));
+        });
+        
+        clientSocket.connect(5001, 'localhost', () => {
+            const service = 'pagos'.padEnd(5, ' ');
+            const payload = service + JSON.stringify(requestPayload);
+            const fullMessage = String(payload.length).padStart(5, '0') + payload;
+            clientSocket.write(fullMessage);
+        });
+
+        let responseBuffer = '';
+        let processingComplete = false;
+        
+        clientSocket.on('data', (data) => {
+            if (processingComplete) return;
+            
+            responseBuffer += data;
+            const headerSize = 5;
+
+            if (responseBuffer.length >= headerSize) {
+                const expectedLength = parseInt(responseBuffer.substring(0, headerSize), 10);
+
+                if (!isNaN(expectedLength) && responseBuffer.length >= headerSize + expectedLength) {
+                    processingComplete = true;
+                    const fullResponse = responseBuffer.substring(headerSize, headerSize + expectedLength);
+                    // Formato del bus: [servicio 5 chars][status 2 chars][JSON]
+                    const serviceFromResponse = fullResponse.substring(0, 5);
+                    const statusFromResponse = fullResponse.substring(5, 7);
+                    const jsonString = fullResponse.substring(7);
+
+                    try {
+                        clearTimeout(timeout);
+                        clientSocket.end();
+                        
+                        if (statusFromResponse !== 'OK' && statusFromResponse.trim() !== 'OK') {
+                            const errorData = JSON.parse(jsonString);
+                            const errorMessage = errorData.error || errorData.message || `Error del servicio de pagos (Status: ${statusFromResponse})`;
+                            reject(new Error(errorMessage));
+                        } else {
+                            const jsonData = JSON.parse(jsonString);
+                            resolve(jsonData);
+                        }
+                    } catch (e) {
+                        reject(new Error(`Error al parsear JSON de respuesta: ${e.message}`));
+                    }
+                }
+            }
+        });
+    });
+}
+
 async function manageCartMenu(inquirer, usuario) {
     let goBack = false;
     let paymentSuccess = false; 
@@ -232,7 +207,7 @@ async function manageCartMenu(inquirer, usuario) {
     while (!goBack && !paymentSuccess) {
         try { 
             console.log("Consultando carrito...");
-            const cart = await sendRequest('carro', { action: 'view', user_id: usuario._id.toString() });
+            const cart = await sendRequest({ action: 'view', user_id: usuario._id.toString() });
             const { itemCount, total: currentCartTotal } = displayCart(cart); 
 
             if (itemCount === 0) {
@@ -289,17 +264,15 @@ async function manageCartMenu(inquirer, usuario) {
                     console.log('\nℹ️ No tienes ASAIpoints disponibles para usar.');
                     pointsToUse = 0; 
                 }
-                // --- End Logic for 20% discount ---
-
 
                 console.log("\nProcesando pago...");
-                const ordenCreada = await sendRequest('pagos', { 
+                const ordenCreada = await sendPaymentRequest({ 
                     action: 'procesar_pago', 
                     payload: { 
                         user_id: usuario._id.toString(), 
                         direccion_id, 
                         metodo_pago_id,
-                        pointsToUse: pointsToUse // Send 0 or 100
+                        pointsToUse: pointsToUse
                     } 
                 });
                 
@@ -314,7 +287,6 @@ async function manageCartMenu(inquirer, usuario) {
                     usuario.asai_points = updatedUsuario.asai_points; 
                     console.log(`\n✨ Tu nuevo saldo de ASAIpoints es: ${updatedUsuario.asai_points}`); 
                 }
-
 
             } else if (cartAction === 'back') { 
                 goBack = true; 
@@ -339,12 +311,12 @@ async function manageCartMenu(inquirer, usuario) {
                             return true;
                         }
                     }]);
-                    console.log("Enviando solicitud al servicio 'carro' para actualizar cantidad...");
-                    await sendRequest('carro', { action: 'update', user_id: usuario._id.toString(), producto_variacion_id: itemToModify, nueva_cantidad: parseInt(newQty, 10) });
+                    console.log("Enviando solicitud al servicio de carrito para actualizar cantidad...");
+                    await sendRequest({ action: 'update', user_id: usuario._id.toString(), producto_variacion_id: itemToModify, nueva_cantidad: parseInt(newQty, 10) });
                     console.log("✅ Cantidad actualizada.");
                 } else if (cartAction === 'remove') {
-                    console.log("Enviando solicitud al servicio 'carro' para eliminar ítem...");
-                    await sendRequest('carro', { action: 'remove', user_id: usuario._id.toString(), producto_variacion_id: itemToModify });
+                    console.log("Enviando solicitud al servicio de carrito para eliminar ítem...");
+                    await sendRequest({ action: 'remove', user_id: usuario._id.toString(), producto_variacion_id: itemToModify });
                     console.log("✅ Ítem eliminado.");
                 }
             }
