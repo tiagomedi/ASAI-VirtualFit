@@ -2,7 +2,7 @@
 
 const { connectDB } = require('../../database/db.js');
 const net = require('net');
-const { crearUsuario, autenticarUsuario } = require('./userlogic.js');
+const { crearUsuario, autenticarUsuario } = require('./userLogic.js');
 
 const BUS_HOST = 'localhost';
 const BUS_PORT = 5001;
@@ -12,12 +12,15 @@ const BUS_PORT = 5001;
  */
 function sendMessage(socket, destination, message, serviceName, status = 'OK') {
     console.log(`[authService] Preparando para enviar a destino: '${destination}'`);
-    const serviceNameFormatted = serviceName.padEnd(5, ' '); // Nombre del servicio que envía la respuesta
-    const statusField = status.padEnd(2, ' '); // Campo de status de 2 bytes
-    const payload = serviceNameFormatted + statusField + message;
-    const header = String(Buffer.byteLength(payload, 'utf8')).padStart(5, '0');
-    socket.write(header + payload);
-    console.log(`[authService] Mensaje enviado a '${destination}' con status '${status}'.`);
+    // The message format should be: destination(5) + serviceName(5) + status(2) + JSON
+    // The bus will route based on destination and forward the entire message to the client
+    const destinationFormatted = destination.padEnd(5, ' '); // Destino (clientId) para routing del bus
+    const serviceNameFormatted = serviceName.padEnd(5, ' '); // Nombre del servicio - 5 bytes  
+    const statusField = status.padEnd(2, ' '); // Campo de status - 2 bytes
+    const fullMessage = destinationFormatted + serviceNameFormatted + statusField + message;
+    const header = String(Buffer.byteLength(fullMessage, 'utf8')).padStart(5, '0');
+    socket.write(header + fullMessage);
+    console.log(`[authService] Mensaje completo enviado: '${fullMessage.substring(0, 20)}...'`);
 }
 
 /**
@@ -65,7 +68,7 @@ async function processRequest(socket, fullPayload, serviceName, handlerFunction)
         if (responseClientId) {
             // El correlationId puede ser undefined aquí, y eso está bien.
             const errorPayload = { status: 'error', correlationId, message: error.message };
-            sendMessage(socket, responseClientId, JSON.stringify(errorPayload), serviceName, 'ER');
+            sendMessage(socket, responseClientId, JSON.stringify(errorPayload), serviceName, 'NK');
         }
     }
 }

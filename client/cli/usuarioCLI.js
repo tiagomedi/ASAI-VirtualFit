@@ -38,22 +38,28 @@ function processBuffer() {
         const fullMessage = buffer.substring(0, 5 + length);
         buffer = buffer.substring(5 + length);
         
+        console.log(`[Cliente] DEBUG - Full message: '${fullMessage}'`);
+        console.log(`[Cliente] DEBUG - Message content: '${fullMessage.substring(5)}'`);
+        
         // Procesar el mensaje completo
         handleMessage(fullMessage);
     }
 }
 
 function handleMessage(fullMessage) {
-    // El mensaje viene en formato: [header 5 bytes][servicio 5 bytes][status 2 bytes][JSON]
-    if (fullMessage.length < 12) {
+    // El mensaje viene en formato: [header 5 bytes][destino 5 bytes][servicio 5 bytes][status 2 bytes][JSON]
+    if (fullMessage.length < 17) {
         console.error('[Cliente] Mensaje muy corto, ignorando');
         return;
     }
     
     const messageContent = fullMessage.substring(5); // Quitamos el header
-    const serviceName = messageContent.substring(0, 5).trim();
-    const status = messageContent.substring(5, 7).trim();
-    const responseJson = messageContent.substring(7);
+    const destination = messageContent.substring(0, 5).trim(); // Destino (debería ser nuestro CLIENT_ID)
+    const serviceName = messageContent.substring(5, 10).trim(); // Nombre del servicio
+    const status = messageContent.substring(10, 12).trim(); // Status
+    const responseJson = messageContent.substring(12); // JSON content
+    
+    console.log(`[Cliente] DEBUG - Dest: '${destination}', Service: '${serviceName}', Status: '${status}', JSON: '${responseJson.substring(0, 50)}...'`);
 
     try {
         const response = JSON.parse(responseJson);
