@@ -195,5 +195,8 @@ Para simular una compra dentro del ecosistema de Virtual Fit, se deben activar y
    ```bash
    node cartClient.js
 
-💡 **Nota**: Aparece el siguiente error al realizar una compra, sin embargo, esta se realiza exitosamente:
-    ❌ Error en la gestión del carrito: Timeout: El servidor pagos no respondió a tiempo (5000ms).
+💡 **Nota Importante**: Durante el proceso de compra, puede aparecer el siguiente mensaje de error:
+
+> ❌ **Error en la gestión del carrito**: Timeout - El servicio de pagos no respondió dentro del tiempo límite (5000ms)
+
+A pesar de este mensaje, **la compra se completa exitosamente** y los servicios de órdenes y puntos procesan correctamente la transacción. Este error indica únicamente un retraso temporal en la respuesta del servicio de pagos y no afecta la integridad del flujo de compra.
