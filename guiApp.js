@@ -72,6 +72,12 @@ const SERVICES_CONFIG = {
         port: 5001,
         description: 'Procesamiento de pagos'
     },
+    notif1Service: {
+        name: 'Notificaciones',
+        path: 'services/service/notif1Service.js',
+        port: 5001,
+        description: 'Sistema de notificaciones y envío de emails'
+    },
     asaiService: {
         name: 'ASAI Assistant',
         path: 'services/service/asaiService.js',
