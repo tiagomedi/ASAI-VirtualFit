@@ -165,3 +165,31 @@ const SERVICES_CONFIG = {
 💡 **Tip**: Para una experiencia óptima, usa la GUI en pantalla completa con un navegador moderno como Chrome, Firefox o Safari.
 
 🚀 **¡Disfruta gestionando tus servicios con estilo!** 
+
+## 🛒 Guía para Simular una Compra
+
+Para simular una compra dentro del ecosistema de Virtual Fit, se deben activar y coordinar los siguientes servicios:
+
+### 🔧 Servicios Requeridos
+
+| Servicio           | Archivo              | Descripción                                       |
+|--------------------|----------------------|---------------------------------------------------|
+| **Órdenes**        | `orderService.js`    | Gestiona y procesa las órdenes de compra         |
+| **Pagos**          | `pagosService.js`    | Encargado de procesar el pago del pedido         |
+| **Puntos**         | `pointService.js`    | Administra la asignación de puntos por compra    |
+| **Cliente Carrito**| `cartClient.js`      | Cliente que simula la compra y dispara el flujo  |
+
+---
+
+### 🧪 Pasos para Ejecutar una Compra
+
+1. **Iniciar Servicios Necesarios**  
+   Desde la GUI, activa los siguientes servicios en orden:
+   - `orderService.js`
+   - `pagosService.js`
+   - `pointService.js`
+
+2. **Ejecutar el Cliente de Compra**  
+   Abre una terminal y ejecuta el siguiente comando:
+   ```bash
+   node cartClient.js
