@@ -10,12 +10,25 @@ const BUS_PORT = 5001;
 /**
  * Función helper para formatear y enviar mensajes al bus.
  */
-function sendMessage(socket, destination, message) {
+function sendMessage(socket, destination, message, serviceName, status = 'OK') {
     console.log(`[authService] Preparando para enviar a destino: '${destination}'`);
-    const payload = destination + message;
+    const serviceNameFormatted = serviceName.padEnd(5, ' '); // Nombre del servicio que envía la respuesta
+    const statusField = status.padEnd(2, ' '); // Campo de status de 2 bytes
+    const payload = serviceNameFormatted + statusField + message;
     const header = String(Buffer.byteLength(payload, 'utf8')).padStart(5, '0');
     socket.write(header + payload);
-    console.log(`[authService] Mensaje enviado a '${destination}'.`);
+    console.log(`[authService] Mensaje enviado a '${destination}' con status '${status}'.`);
+}
+
+/**
+ * Función para registrar un servicio en el bus.
+ */
+function registerService(socket, serviceName) {
+    console.log(`[authService] Registrando servicio: '${serviceName}'`);
+    const registerPayload = 'sinit' + serviceName;
+    const header = String(Buffer.byteLength(registerPayload, 'utf8')).padStart(5, '0');
+    socket.write(header + registerPayload);
+    console.log(`[authService] Registro enviado para '${serviceName}'.`);
 }
 
 /**
@@ -45,14 +58,14 @@ async function processRequest(socket, fullPayload, serviceName, handlerFunction)
         const result = await handlerFunction(requestData.correo, requestData.password);
         
         const successPayload = { status: 'success', correlationId, data: result };
-        sendMessage(socket, responseClientId, JSON.stringify(successPayload));
+        sendMessage(socket, responseClientId, JSON.stringify(successPayload), serviceName, 'OK');
 
     } catch (error) {
         console.error(`[Worker ${serviceName}] Error: ${error.message}`);
         if (responseClientId) {
             // El correlationId puede ser undefined aquí, y eso está bien.
             const errorPayload = { status: 'error', correlationId, message: error.message };
-            sendMessage(socket, responseClientId, JSON.stringify(errorPayload));
+            sendMessage(socket, responseClientId, JSON.stringify(errorPayload), serviceName, 'ER');
         }
     }
 }
@@ -67,7 +80,7 @@ async function createServiceWorker(serviceName, handlerFunction) {
     workerSocket.connect({ host: BUS_HOST, port: BUS_PORT }, () => {
         console.log(`[Worker ${serviceName}] Conectado al bus.`);
         // Este socket se registra para atender un servicio específico
-        sendMessage(workerSocket, 'sinit', serviceName);
+        registerService(workerSocket, serviceName);
     });
 
     try {
