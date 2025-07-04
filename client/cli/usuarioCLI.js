@@ -7,17 +7,14 @@ const CLIENT_ID = uuidv4().substring(0, 5);
 
 const pendingResponses = new Map();
 const clientSocket = new net.Socket();
-let buffer = Buffer.alloc(0);
-
-
+let buffer = ''; // Cambiar a string como otros archivos del proyecto
 
 clientSocket.on('data', (chunk) => {
-    buffer = Buffer.concat([buffer, chunk]);
+    buffer += chunk.toString();
     processBuffer();
 });
 
 clientSocket.on('close', () => {
-    processBuffer(true); // Procesa lo que quede al cerrar
     console.log('[Cliente] Conexión con el bus cerrada.');
     // Limpia promesas pendientes
     for (const [correlationId, handler] of pendingResponses.entries()) {
@@ -26,46 +23,54 @@ clientSocket.on('close', () => {
     pendingResponses.clear();
 });
 
-function processBuffer(force = false) {
+function processBuffer() {
     while (buffer.length >= 5) {
-        const lengthStr = buffer.slice(0, 5).toString();
+        const lengthStr = buffer.substring(0, 5);
         const length = parseInt(lengthStr, 10);
         if (isNaN(length)) {
-            buffer = Buffer.alloc(0);
+            console.error('[Cliente] Error en el header del mensaje, limpiando buffer');
+            buffer = '';
             break;
         }
         if (buffer.length < 5 + length) {
-            if (force && buffer.length > 5) {
-                // Forzar procesamiento si el socket se cerró y hay datos
-                const msg = buffer.slice(5).toString();
-                handleMessage(msg);
-                buffer = Buffer.alloc(0);
-            }
-            break;
+            break; // Esperar más datos
         }
-        const msg = buffer.slice(5, 5 + length).toString();
-        handleMessage(msg);
-        buffer = buffer.slice(5 + length);
+        const fullMessage = buffer.substring(0, 5 + length);
+        buffer = buffer.substring(5 + length);
+        
+        // Procesar el mensaje completo
+        handleMessage(fullMessage);
     }
 }
 
-function handleMessage(fullPayload) {
-    const destinationId = fullPayload.substring(0, 5);
-    const responseJson = fullPayload.substring(5);
-
-    if (destinationId !== CLIENT_ID) {
+function handleMessage(fullMessage) {
+    // El mensaje viene en formato: [header 5 bytes][servicio 5 bytes][status 2 bytes][JSON]
+    if (fullMessage.length < 12) {
+        console.error('[Cliente] Mensaje muy corto, ignorando');
         return;
     }
+    
+    const messageContent = fullMessage.substring(5); // Quitamos el header
+    const serviceName = messageContent.substring(0, 5).trim();
+    const status = messageContent.substring(5, 7).trim();
+    const responseJson = messageContent.substring(7);
 
     try {
         const response = JSON.parse(responseJson);
+        
         if (response.correlationId && pendingResponses.has(response.correlationId)) {
             const handler = pendingResponses.get(response.correlationId);
             pendingResponses.delete(response.correlationId);
-            handler(null, response);
+            
+            if (status === 'OK') {
+                handler(null, response);
+            } else {
+                handler(new Error(`Error del servicio ${serviceName}: ${response.message || 'Error desconocido'}`), null);
+            }
         }
     } catch (e) {
-        console.error(`[Cliente] Error al procesar mensaje: ${e.message}`);
+        console.error(`[Cliente] Error al procesar mensaje JSON: ${e.message}`);
+        console.error(`[Cliente] Mensaje problemático: ${responseJson.substring(0, 200)}...`);
     }
 }
 
