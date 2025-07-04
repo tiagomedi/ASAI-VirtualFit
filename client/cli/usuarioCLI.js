@@ -37,34 +37,78 @@ function processBuffer() {
     while (buffer.length >= 5) {
         const lengthStr = buffer.substring(0, 5);
         const length = parseInt(lengthStr, 10);
-        console.log(`[Cliente] DEBUG - Esperando mensaje de longitud: ${length}, tenemos: ${buffer.length}`);
-        if (isNaN(length)) {
-            console.error('[Cliente] Error en el header del mensaje, limpiando buffer');
-            buffer = '';
-            break;
+        
+        if (isNaN(length) || length < 0 || length > 100000) {
+            console.error(`[Cliente] Header inválido: '${lengthStr}', buscando siguiente header válido...`);
+            
+            // Buscar el siguiente header válido en el buffer
+            let nextHeaderPos = -1;
+            for (let i = 1; i < buffer.length - 4; i++) {
+                const potentialHeader = buffer.substring(i, i + 5);
+                const potentialLength = parseInt(potentialHeader, 10);
+                if (!isNaN(potentialLength) && potentialLength > 0 && potentialLength < 10000) {
+                    // Verificar que el mensaje completo esté disponible
+                    if (i + 5 + potentialLength <= buffer.length) {
+                        // Verificar que el formato del mensaje sea correcto
+                        const testMessage = buffer.substring(i + 5, i + 17);
+                        if (testMessage.length >= 12 && testMessage.includes('admin')) {
+                            nextHeaderPos = i;
+                            console.log(`[Cliente] DEBUG - Encontrado header válido en posición ${i}: '${potentialHeader}'`);
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (nextHeaderPos > 0) {
+                buffer = buffer.substring(nextHeaderPos);
+                continue;
+            } else {
+                console.error(`[Cliente] No se encontró header válido, limpiando buffer`);
+                buffer = '';
+                break;
+            }
         }
-        if (buffer.length < 5 + length) {
-            console.log(`[Cliente] DEBUG - Mensaje incompleto, esperando más datos... Faltan ${(5 + length) - buffer.length} bytes`);
+        
+        console.log(`[Cliente] DEBUG - Esperando mensaje de longitud: ${length}, tenemos: ${buffer.length}`);
+        
+        const expectedTotalLength = 5 + length;
+        if (buffer.length < expectedTotalLength) {
+            console.log(`[Cliente] DEBUG - Mensaje incompleto, esperando más datos... Faltan ${expectedTotalLength - buffer.length} bytes`);
             
             // Reintentar después de un pequeño delay para permitir más datos
             processBufferTimeout = setTimeout(() => {
-                if (buffer.length >= 5 + length) {
+                if (buffer.length >= expectedTotalLength) {
                     processBuffer();
                 } else {
-                    console.log(`[Cliente] DEBUG - Timeout esperando datos, procesando mensaje incompleto...`);
-                    // Procesar lo que tenemos si ha pasado suficiente tiempo
-                    if (buffer.length > 5) {
-                        const partialMessage = buffer.substring(0, buffer.length);
+                    console.log(`[Cliente] DEBUG - Timeout esperando datos después de 300ms`);
+                    // Si la diferencia es muy pequeña (1-2 bytes), puede ser un problema de encoding
+                    if (buffer.length >= expectedTotalLength - 2) {
+                        console.log(`[Cliente] DEBUG - Diferencia mínima detectada, procesando mensaje disponible`);
+                        const availableMessage = buffer.substring(0, buffer.length);
                         buffer = '';
-                        handleMessage(partialMessage);
+                        handleMessage(availableMessage);
+                    } else {
+                        // Para diferencias mayores, intentar procesar si al menos tenemos la mayoría del mensaje
+                        console.log(`[Cliente] DEBUG - Diferencia mayor detectada (${expectedTotalLength - buffer.length} bytes), intentando procesar mensaje parcial`);
+                        if (buffer.length >= expectedTotalLength * 0.95) { // Si tenemos al menos 95% del mensaje
+                            const availableMessage = buffer.substring(0, buffer.length);
+                            buffer = '';
+                            handleMessage(availableMessage);
+                        } else {
+                            console.log(`[Cliente] DEBUG - Mensaje muy incompleto, descartando`);
+                            buffer = '';
+                        }
                     }
                 }
-            }, 100);
+            }, 300);
             break;
         }
-        const fullMessage = buffer.substring(0, 5 + length);
-        buffer = buffer.substring(5 + length);
-        console.log(`[Cliente] DEBUG - Procesando mensaje completo de ${fullMessage.length} bytes`);
+        
+        // Extraer exactamente la cantidad de bytes especificada en el header
+        const fullMessage = buffer.substring(0, expectedTotalLength);
+        buffer = buffer.substring(expectedTotalLength);
+        console.log(`[Cliente] DEBUG - Procesando mensaje completo de ${fullMessage.length} bytes (esperado: ${expectedTotalLength})`);
         
         // Procesar el mensaje completo
         handleMessage(fullMessage);
@@ -72,7 +116,7 @@ function processBuffer() {
 }
 
 function handleMessage(fullMessage) {
-    console.log(`[Cliente] DEBUG - Mensaje completo recibido (${fullMessage.length} bytes): '${fullMessage.substring(0, 100)}...'`);
+    console.log(`[Cliente] DEBUG - Mensaje completo recibido (${fullMessage.length} bytes): '${fullMessage.substring(0, 50)}...'`);
     
     // El mensaje viene en formato: [header 5 bytes][destino 5 bytes][servicio 5 bytes][status 2 bytes][JSON]
     if (fullMessage.length < 17) {
@@ -87,10 +131,45 @@ function handleMessage(fullMessage) {
     const responseJson = messageContent.substring(12); // JSON content
     
     console.log(`[Cliente] DEBUG - Dest: '${destination}', Service: '${serviceName}', Status: '${status}', CLIENT_ID: '${CLIENT_ID}'`);
-    console.log(`[Cliente] DEBUG - JSON: '${responseJson.substring(0, 100)}...'`);
+    console.log(`[Cliente] DEBUG - JSON length: ${responseJson.length}, first 100 chars: '${responseJson.substring(0, 100)}...'`);
 
     try {
-        const response = JSON.parse(responseJson);
+        // Verificar que el JSON está completo buscando llaves balanceadas
+        let braceCount = 0;
+        let inString = false;
+        let escaped = false;
+        let jsonEnd = -1;
+        
+        for (let i = 0; i < responseJson.length; i++) {
+            const char = responseJson[i];
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (char === '\\') {
+                escaped = true;
+                continue;
+            }
+            if (char === '"') {
+                inString = !inString;
+                continue;
+            }
+            if (!inString) {
+                if (char === '{') braceCount++;
+                else if (char === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                        jsonEnd = i + 1;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        const completeJson = jsonEnd > 0 ? responseJson.substring(0, jsonEnd) : responseJson;
+        console.log(`[Cliente] DEBUG - JSON completo detectado con ${completeJson.length} caracteres`);
+        
+        const response = JSON.parse(completeJson);
         console.log(`[Cliente] DEBUG - Respuesta parseada: correlationId='${response.correlationId}', tenemos pendiente: ${pendingResponses.has(response.correlationId)}`);
         
         if (response.correlationId && pendingResponses.has(response.correlationId)) {
@@ -109,7 +188,8 @@ function handleMessage(fullMessage) {
         }
     } catch (e) {
         console.error(`[Cliente] Error al procesar mensaje JSON: ${e.message}`);
-        console.error(`[Cliente] Mensaje problemático: ${responseJson.substring(0, 200)}...`);
+        console.error(`[Cliente] Mensaje problemático (primeros 300 chars): ${responseJson.substring(0, 300)}...`);
+        console.error(`[Cliente] Longitud total del JSON: ${responseJson.length}`);
     }
 }
 
@@ -162,7 +242,7 @@ async function handleAdminTasks(inquirer, adminUser) {
             type: 'list',
             name: 'adminAction',
             message: 'Menú de Administrador:',
-            choices: ['Crear Producto', 'Editar Producto', 'Eliminar Producto', 'Salir'],
+            choices: ['Crear Producto', 'Editar Producto', 'Eliminar Producto', 'Listar Productos', 'Salir'],
         }]);
         if (adminAction === 'Salir') break;
 
@@ -177,17 +257,40 @@ async function handleAdminTasks(inquirer, adminUser) {
             case 'Editar Producto':
                 operation = 'editarProducto';
                 const { productoId: editId } = await inquirer.prompt([{ name: 'productoId', message: 'ID del producto a editar:' }]);
-                // Puedes pedir más campos aquí:
+                
+                // Primero listar las variaciones del producto para que el usuario sepa cuál editar
+                console.log('\n--- Obteniendo información del producto ---');
+                try {
+                    const productInfo = await sendRequestAndWait('admin', { 
+                        userId: adminUser._id, 
+                        operation: 'obtenerProducto', 
+                        payload: { productoId: editId } 
+                    });
+                    
+                    console.log(`\nProducto: ${productInfo.data.nombre} (${productInfo.data.marca})`);
+                    console.log('Variaciones disponibles:');
+                    productInfo.data.variaciones.forEach((v, index) => {
+                        console.log(`  ${index}: Talla ${v.talla}, Color ${v.color}, Precio $${v.precio}, Stock ${v.stock}`);
+                    });
+                } catch (e) {
+                    console.log('No se pudo obtener la información del producto, continuando...');
+                }
+                
                 const updates = await inquirer.prompt([
                     { name: 'nombre', message: 'Nuevo nombre (deja vacío para no cambiar):' },
                     { name: 'marca', message: 'Nueva marca (deja vacío para no cambiar):' },
+                    { name: 'variacionIndex', message: 'Índice de variación a editar (deja vacío para no cambiar variaciones):', type: 'number' },
                     { name: 'talla', message: 'Nueva talla (deja vacío para no cambiar):' },
                     { name: 'color', message: 'Nuevo color (deja vacío para no cambiar):' },
                     { name: 'precio', message: 'Nuevo precio (deja vacío para no cambiar):', type: 'number' },
                     { name: 'stock', message: 'Nuevo stock (deja vacío para no cambiar):', type: 'number' }
                 ]);
+                
                 // Elimina campos vacíos
-                Object.keys(updates).forEach(k => { if (!updates[k]) delete updates[k]; });
+                Object.keys(updates).forEach(k => { 
+                    if (updates[k] === '' || updates[k] === undefined || updates[k] === null) delete updates[k]; 
+                });
+                
                 payload = { productoId: editId, updates };
                 break;
             case 'Eliminar Producto':
@@ -195,11 +298,73 @@ async function handleAdminTasks(inquirer, adminUser) {
                 const { productoId: deleteId } = await inquirer.prompt([{ name: 'productoId', message: 'ID del producto a eliminar:' }]);
                 payload = { productoId: deleteId };
                 break;
+            case 'Listar Productos':
+                operation = 'listarProductos';
+                const listOptions = await inquirer.prompt([
+                    { name: 'limit', message: 'Límite de productos (por defecto 5, máximo 6):', type: 'number', default: 5 },
+                    { name: 'skip', message: 'Saltar productos (por defecto 0):', type: 'number', default: 0 }
+                ]);
+                // Limitar el máximo a 6 para evitar mensajes muy largos
+                const finalLimit = Math.min(listOptions.limit || 5, 6);
+                payload = { limit: finalLimit, skip: listOptions.skip || 0, filtros: {} };
+                console.log(`[Cliente] DEBUG - Solicitando ${finalLimit} productos (límite aplicado)`);
+                break;
         }
         
         try {
             const adminResponse = await sendRequestAndWait('admin', { userId: adminUser._id, operation, payload });
-            console.log('\n✅ Operación de Admin exitosa:', JSON.stringify(adminResponse.data, null, 2));
+            
+            if (operation === 'listarProductos') {
+                const { productos, total, limit, skip } = adminResponse.data;
+                console.log(`\n✅ Lista de productos (${productos.length} de ${total} totales):`);
+                if (productos.length === 0) {
+                    console.log('  No hay productos registrados.');
+                } else {
+                    productos.forEach((producto, index) => {
+                        console.log(`\n  ${index + 1}. ${producto.nombre} (${producto.marca})`);
+                        console.log(`     ID: ${producto.id}`);
+                        console.log(`     Variaciones: ${producto.vars}`);
+                    });
+                    
+                    // Ofrecer ver detalles de un producto específico
+                    const { verDetalles } = await inquirer.prompt([{
+                        type: 'confirm',
+                        name: 'verDetalles',
+                        message: '¿Deseas ver los detalles de algún producto?',
+                        default: false
+                    }]);
+                    
+                    if (verDetalles) {
+                        const { productoSeleccionado } = await inquirer.prompt([{
+                            type: 'input',
+                            name: 'productoSeleccionado',
+                            message: 'Ingresa el ID del producto para ver sus detalles:'
+                        }]);
+                        
+                        try {
+                            const detalleResponse = await sendRequestAndWait('admin', { 
+                                userId: adminUser._id, 
+                                operation: 'obtenerProducto', 
+                                payload: { productoId: productoSeleccionado } 
+                            });
+                            
+                            const prod = detalleResponse.data;
+                            console.log(`\n📋 Detalles del producto:`);
+                            console.log(`   Nombre: ${prod.nombre}`);
+                            console.log(`   Marca: ${prod.marca}`);
+                            console.log(`   ID: ${prod._id}`);
+                            console.log(`   Variaciones:`);
+                            prod.variaciones.forEach((v, i) => {
+                                console.log(`     ${i}: Talla ${v.talla}, Color ${v.color}, $${v.precio}, Stock: ${v.stock}`);
+                            });
+                        } catch (e) {
+                            console.error(`   ❌ Error al obtener detalles: ${e.message}`);
+                        }
+                    }
+                }
+            } else {
+                console.log('\n✅ Operación de Admin exitosa:', JSON.stringify(adminResponse.data, null, 2));
+            }
         } catch (e) {
             console.error(`\n❌ Error del servicio de Admin: ${e.message}`);
         }
