@@ -83,6 +83,12 @@ const SERVICES_CONFIG = {
         path: 'services/service/asaiService.js',
         port: 5001,
         description: 'Asistente virtual inteligente'
+    },
+    adminService: {
+        name: 'Administración',
+        path: 'services/service/adminService.js',
+        port: 5005,
+        description: 'Gestión administrativa de productos'
     }
 };
 
